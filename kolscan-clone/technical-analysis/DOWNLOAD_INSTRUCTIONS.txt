@@ -1,0 +1,89 @@
+===========================================================
+KOLSCAN TECHNICAL ANALYSIS - DOWNLOAD INSTRUCTIONS
+===========================================================
+
+This folder contains the complete 50-page technical analysis
+of how Kolscan works internally.
+
+-----------------------------------------------------------
+technical-analysis/
+ README.md                          ← Start here!
+ KOLSCAN_COMPLETE_ANALYSIS.pdf      ← Full document (when converted)
+ KOLSCAN_COMPLETE_ANALYSIS.md       ← Full markdown version
+ sections/                          ← Individual chapters
+ code-examples/                     ← Working code samples  
+ diagrams/                          ← Architecture diagrams
+
+-----------------------------------------------------------
+
+METHOD 1: Download Entire Folder
+---------------------------------
+Right-click on "technical-analysis" folder → Download
+
+METHOD 2: Download Individual Files
+------------------------------------
+Click on any file → Click "Download" or "Raw" button
+
+METHOD 3: Use Git (if in repository)
+-------------------------------------
+git clone <repo-url>
+cd kolscan-clone/technical-analysis
+
+-----------------------------------------------------------
+ Complete 15,000-word technical analysis
+ 9 detailed sections on Kolscan architecture
+ Code examples (TypeScript, Python, SQL)
+ Database schemas
+ Architecture diagrams (text-based)
+ Cost estimations
+ Limitations analysis
+
+-----------------------------------------------------------
+
+Option 1: Read in Windsurf/VS Code
+----------------------------------
+Open any .md file in your IDE
+
+Option 2: Convert to PDF
+-------------------------
+Use Pandoc or Markdown-to-PDF tools:
+  pandoc KOLSCAN_COMPLETE_ANALYSIS.md -o analysis.pdf
+
+Option 3: Read on GitHub
+-------------------------
+Upload to GitHub, markdown renders beautifully
+
+Option 4: Use Markdown Viewer
+------------------------------
+- Typora (desktop app)
+- MarkText (free)
+- Online: dillinger.io, stackedit.io
+
+-----------------------------------------------------------
+1. README.md (5 min)
+2. Section 1: Architecture (15 min)
+3. Section 4: PnL Computation (20 min)  
+4. Section 9: Limitations (15 min)
+5. Full document if interested (2-3 hours)
+
+-----------------------------------------------------------
+- Total Words: ~15,000
+- Total Pages: ~50 (when formatted)
+- Code Examples: 25+
+- SQL Queries: 15+
+- Diagrams: 3
+- Sections: 9
+
+-----------------------------------------------------------
+ Learn Solana analytics architecture
+ Build similar tracking systems
+ Understand KOL monitoring
+ Study data engineering patterns
+ Reference for blockchain analytics
+
+ DISCLAIMER:
+-----------------------------------------------------------
+This analysis is for EDUCATIONAL purposes only.
+Based on observable behavior, not insider knowledge.
+Not intended for copying or competing with Kolscan.
+
