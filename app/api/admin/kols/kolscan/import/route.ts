@@ -165,16 +165,21 @@ export async function POST(request: NextRequest) {
       website_url = socials.website_url
     }
 
-    rows.push({
+    const row: any = {
       wallet_address: a.wallet,
-      display_name: a.name,
-      twitter_url,
-      telegram_url,
-      website_url,
       is_active: true,
-      is_tracked: trackImported ? true : false,
-      tracked_rank: shouldSetTrackedRank ? a.rank : null,
-    })
+    }
+
+    if (a.name) row.display_name = a.name
+    if (twitter_url) row.twitter_url = twitter_url
+    if (telegram_url) row.telegram_url = telegram_url
+    if (website_url) row.website_url = website_url
+
+    // Never untrack or clear rank on re-import; only set when explicitly asked.
+    if (trackImported) row.is_tracked = true
+    if (shouldSetTrackedRank) row.tracked_rank = a.rank
+
+    rows.push(row)
   }
 
   const { error } = await supabase.from("kols").upsert(rows, { onConflict: "wallet_address" })
