@@ -87,45 +87,59 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Missing HELIUS_WEBHOOK_ID" }, { status: 500 })
   }
 
-  const body = (await request.json().catch(() => null)) as any
-  const limit = typeof body?.limit === "number" && Number.isFinite(body.limit) && body.limit > 0 ? Math.floor(body.limit) : 2000
+  try {
+    const body = (await request.json().catch(() => null)) as any
+    const limit = typeof body?.limit === "number" && Number.isFinite(body.limit) && body.limit > 0 ? Math.floor(body.limit) : 2000
 
-  const supabase = createServiceClient()
-  const { data: kols, error } = await supabase
-    .from("kols")
-    .select("wallet_address")
-    .eq("is_active", true)
-    .eq("is_tracked", true)
-    .order("tracked_rank", { ascending: true, nullsFirst: false })
-    .order("updated_at", { ascending: false })
-    .limit(limit)
+    const supabase = createServiceClient()
+    const { data: kols, error } = await supabase
+      .from("kols")
+      .select("wallet_address")
+      .eq("is_active", true)
+      .eq("is_tracked", true)
+      .order("tracked_rank", { ascending: true, nullsFirst: false })
+      .order("updated_at", { ascending: false })
+      .limit(limit)
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    const addresses = uniqStrings((kols ?? []).map((k: any) => String(k.wallet_address)))
+
+    const current = await heliusGetWebhook(webhookId, apiKey)
+
+    const updateBody: Partial<HeliusWebhook> = {
+      webhookURL: current.webhookURL,
+      transactionTypes: current.transactionTypes,
+      accountAddresses: addresses,
+      webhookType: current.webhookType,
+      authHeader: current.authHeader,
+      encoding: current.encoding,
+      txnStatus: current.txnStatus,
+    }
+
+    const updated = await heliusUpdateWebhook(webhookId, apiKey, updateBody)
+
+    return NextResponse.json({
+      ok: true,
+      trackedWallets: addresses.length,
+      heliusWebhookId: webhookId,
+      heliusBaseUrl: getHeliusWebhookBaseUrl(),
+      heliusAccountAddresses: updated.accountAddresses?.length ?? null,
+      transactionTypes: updated.transactionTypes ?? null,
+      webhookURL: updated.webhookURL ?? null,
+    })
+  } catch (e: any) {
+    const msg = e?.message ?? String(e)
+    console.error("Helius webhook sync failed:", msg)
+    return NextResponse.json(
+      {
+        error: msg,
+        heliusWebhookId: webhookId,
+        heliusBaseUrl: getHeliusWebhookBaseUrl(),
+      },
+      { status: 500 },
+    )
   }
-
-  const addresses = uniqStrings((kols ?? []).map((k: any) => String(k.wallet_address)))
-
-  const current = await heliusGetWebhook(webhookId, apiKey)
-
-  const updateBody: Partial<HeliusWebhook> = {
-    webhookURL: current.webhookURL,
-    transactionTypes: current.transactionTypes,
-    accountAddresses: addresses,
-    webhookType: current.webhookType,
-    authHeader: current.authHeader,
-    encoding: current.encoding,
-    txnStatus: current.txnStatus,
-  }
-
-  const updated = await heliusUpdateWebhook(webhookId, apiKey, updateBody)
-
-  return NextResponse.json({
-    ok: true,
-    trackedWallets: addresses.length,
-    heliusWebhookId: webhookId,
-    heliusAccountAddresses: updated.accountAddresses?.length ?? null,
-    transactionTypes: updated.transactionTypes ?? null,
-    webhookURL: updated.webhookURL ?? null,
-  })
 }
