@@ -55,7 +55,8 @@ export function requireBearerIfConfigured(args: {
   envVarName: string
   productionRequired?: boolean
 }): NextResponse | null {
-  const expected = process.env[args.envVarName]
+  const expectedRaw = process.env[args.envVarName]
+  const expected = typeof expectedRaw === "string" ? expectedRaw.trim() : expectedRaw
 
   const prodRequired = args.productionRequired !== false
   if (process.env.NODE_ENV === "production" && prodRequired && (!expected || expected.length === 0)) {
@@ -67,7 +68,8 @@ export function requireBearerIfConfigured(args: {
   const auth = args.request.headers.get("authorization")
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   const m = auth.match(/^Bearer\s+(.+)$/i)
-  const got = m?.[1] ?? null
+  const gotRaw = m?.[1] ?? null
+  const got = typeof gotRaw === "string" ? gotRaw.trim() : gotRaw
   if (!got || got !== expected) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   return null
