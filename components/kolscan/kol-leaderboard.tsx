@@ -31,6 +31,23 @@ function formatSol(n: number) {
   return Number.isFinite(n) ? n.toFixed(2) : "0.00"
 }
 
+function Avatar({ src, alt, size, className }: { src: string | null; alt: string; size: number; className?: string }) {
+  const [failed, setFailed] = useState(false)
+
+  if (!src || failed) {
+    return <div className={className ?? ""} style={{ height: size, width: size }} />
+  }
+
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className={className}
+      onError={() => setFailed(true)}
+    />
+  )
+}
+
 export function KolLeaderboard() {
   const [timeFrame, setTimeFrame] = useState<TimeFrame>("daily")
   const [searchQuery, setSearchQuery] = useState("")
@@ -229,15 +246,12 @@ export function KolLeaderboard() {
                     </div>
 
                     <div className="flex items-center gap-3">
-                      {kol.avatar ? (
-                        <img
-                          src={kol.avatar}
-                          alt={kol.name}
-                          className="h-10 w-10 rounded-full border-2 border-[#3a3b3b]"
-                        />
-                      ) : (
-                        <div className="h-10 w-10 rounded-full border-2 border-[#3a3b3b] bg-[#2a2b2b]" />
-                      )}
+                      <Avatar
+                        src={kol.avatar}
+                        alt={kol.name}
+                        size={40}
+                        className="h-10 w-10 rounded-full border-2 border-[#3a3b3b] bg-[#2a2b2b]"
+                      />
 
                       <div className="flex items-center gap-2">
                         <span className="font-semibold">{kol.name}</span>
@@ -313,15 +327,12 @@ export function KolLeaderboard() {
             <>
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-4">
-                  {selectedKOL.avatar ? (
-                    <img
-                      src={selectedKOL.avatar}
-                      alt={selectedKOL.name}
-                      className="h-16 w-16 rounded-full border-2 border-[#3a3b3b]"
-                    />
-                  ) : (
-                    <div className="h-16 w-16 rounded-full border-2 border-[#3a3b3b] bg-[#2a2b2b]" />
-                  )}
+                  <Avatar
+                    src={selectedKOL.avatar}
+                    alt={selectedKOL.name}
+                    size={64}
+                    className="h-16 w-16 rounded-full border-2 border-[#3a3b3b] bg-[#2a2b2b]"
+                  />
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="text-2xl font-bold">{selectedKOL.name}</span>

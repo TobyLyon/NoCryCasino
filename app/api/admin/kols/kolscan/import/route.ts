@@ -77,6 +77,77 @@ function extractSocials(html: string): { twitter_url: string | null; telegram_ur
   return { twitter_url, telegram_url, website_url }
 }
 
+async function fetchLeaderboardApi(args: { timeframe: 1 | 7 | 30; page: number; pageSize: number }): Promise<
+  Array<{ wallet_address: string; name?: string | null; twitter?: string | null; telegram?: string | null }>
+> {
+  // Kolscan appears to use bot-management/cookies that are present in a browser.
+  // Try to obtain cookies by fetching the leaderboard page first, then call the JSON API with those cookies.
+  // Cache cookies briefly to avoid re-fetching per page.
+  const now = Date.now()
+  ;(globalThis as any).__kolscanCookieCache = (globalThis as any).__kolscanCookieCache ?? { cookie: "", ts: 0 }
+  const cache = (globalThis as any).__kolscanCookieCache as { cookie: string; ts: number }
+
+  let cookieHeader = cache.cookie
+  if (!cookieHeader || now - cache.ts > 10 * 60_000) {
+    const warm = await fetch(`https://kolscan.io/leaderboard?timeframe=${args.timeframe}`, {
+      method: "GET",
+      headers: {
+        "user-agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+      cache: "no-store",
+    })
+
+    // Undici/Next runtime supports getSetCookie(); fallback to set-cookie header string.
+    const getSetCookie = (warm.headers as any).getSetCookie as undefined | (() => string[])
+    const setCookies = typeof getSetCookie === "function" ? getSetCookie.call(warm.headers) : []
+    const setCookieStr = warm.headers.get("set-cookie")
+
+    const parts = [...setCookies, ...(setCookieStr ? [setCookieStr] : [])]
+      .flatMap((v) => String(v).split(/,(?=[^;]+?=)/g))
+      .map((v) => v.split(";")[0]?.trim())
+      .filter((v): v is string => !!v)
+
+    cookieHeader = parts.join("; ")
+    cache.cookie = cookieHeader
+    cache.ts = now
+  }
+
+  const res = await fetch("https://kolscan.io/api/leaderboard", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      // Kolscan appears to block some non-browser UAs; mimic a normal browser.
+      "user-agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      accept: "application/json, text/plain, */*",
+      "accept-language": "en-US,en;q=0.9",
+      origin: "https://kolscan.io",
+      referer: `https://kolscan.io/leaderboard?timeframe=${args.timeframe}`,
+      "sec-ch-ua": "\"Chromium\";v=\"124\", \"Google Chrome\";v=\"124\", \"Not-A.Brand\";v=\"99\"",
+      "sec-ch-ua-mobile": "?0",
+      "sec-ch-ua-platform": "\"Windows\"",
+      "sec-fetch-site": "same-origin",
+      "sec-fetch-mode": "cors",
+      "sec-fetch-dest": "empty",
+      "x-requested-with": "XMLHttpRequest",
+      ...(cookieHeader ? { cookie: cookieHeader } : null),
+    },
+    body: JSON.stringify({ timeframe: args.timeframe, page: args.page, pageSize: args.pageSize }),
+    cache: "no-store",
+  })
+
+  const text = await res.text()
+  if (!res.ok) {
+    throw new Error(`kolscan api/leaderboard failed (${res.status}): ${text.slice(0, 250)}`)
+  }
+
+  const json = JSON.parse(text) as any
+  const data = Array.isArray(json?.data) ? json.data : []
+  return data
+}
+
 async function fetchText(url: string): Promise<string> {
   const res = await fetch(url, {
     method: "GET",
@@ -118,17 +189,49 @@ export async function POST(request: NextRequest) {
   const enrich = body?.enrich === true
   const trackImported = body?.trackImported === true
 
-  const allAccounts: Array<{ wallet: string; name: string | null; timeframe: "daily" | "weekly" | "monthly"; rank: number }> = []
+  const allAccounts: Array<{ wallet: string; name: string | null; twitter?: string | null; telegram?: string | null; timeframe: "daily" | "weekly" | "monthly"; rank: number }> = []
+  const sources: Record<string, "api" | "html"> = {}
+  const apiErrors: Record<string, string> = {}
 
   for (const tf of timeframes) {
     const tfParam = tf === "daily" ? 1 : tf === "weekly" ? 7 : 30
-    const leaderboardUrl = `https://kolscan.io/leaderboard?timeframe=${tfParam}`
-    const leaderboardHtml = await fetchText(leaderboardUrl)
-    const accounts = extractKolscanAccounts(leaderboardHtml).slice(0, limit)
 
-    for (let i = 0; i < accounts.length; i += 1) {
-      const a = accounts[i]!
-      allAccounts.push({ wallet: a.wallet, name: a.name, timeframe: tf, rank: i + 1 })
+    // Prefer the internal JSON API (supports pagination and includes socials).
+    // Fallback to HTML parsing if the API fails.
+    const pageSize = Math.min(50, Math.max(1, limit))
+    let got = 0
+    let page = 0
+
+    try {
+      while (got < limit && page < 50) {
+        const rows = await fetchLeaderboardApi({ timeframe: tfParam as 1 | 7 | 30, page, pageSize })
+        if (!rows || rows.length === 0) break
+
+        for (let i = 0; i < rows.length && got < limit; i += 1) {
+          const r = rows[i]!
+          const wallet = String(r.wallet_address || "").trim()
+          if (!wallet) continue
+          const name = typeof r.name === "string" && r.name.trim().length > 0 ? r.name.trim() : null
+          const twitter = typeof r.twitter === "string" && r.twitter.trim().length > 0 ? r.twitter.trim() : null
+          const telegram = typeof r.telegram === "string" && r.telegram.trim().length > 0 ? r.telegram.trim() : null
+          allAccounts.push({ wallet, name, twitter, telegram, timeframe: tf, rank: got + 1 })
+          got += 1
+        }
+
+        page += 1
+      }
+      sources[tf] = "api"
+    } catch (e: any) {
+      sources[tf] = "html"
+      apiErrors[tf] = e?.message ?? String(e)
+      const leaderboardUrl = `https://kolscan.io/leaderboard?timeframe=${tfParam}`
+      const leaderboardHtml = await fetchText(leaderboardUrl)
+      const accounts = extractKolscanAccounts(leaderboardHtml).slice(0, limit)
+
+      for (let i = 0; i < accounts.length; i += 1) {
+        const a = accounts[i]!
+        allAccounts.push({ wallet: a.wallet, name: a.name, timeframe: tf, rank: i + 1 })
+      }
     }
   }
 
@@ -152,16 +255,16 @@ export async function POST(request: NextRequest) {
   for (let i = 0; i < deduped.length; i += 1) {
     const a = deduped[i]!
 
-    let twitter_url: string | null = null
-    let telegram_url: string | null = null
+    let twitter_url: string | null = typeof a.twitter === "string" && a.twitter.trim().length > 0 ? a.twitter.trim() : null
+    let telegram_url: string | null = typeof a.telegram === "string" && a.telegram.trim().length > 0 ? a.telegram.trim() : null
     let website_url: string | null = null
 
     if (enrich) {
       const accountUrl = `https://kolscan.io/account/${a.wallet}?timeframe=${tfParamForEnrich(a.timeframe)}`
       const accountHtml = await fetchText(accountUrl)
       const socials = extractSocials(accountHtml)
-      twitter_url = socials.twitter_url
-      telegram_url = socials.telegram_url
+      twitter_url = socials.twitter_url ?? twitter_url
+      telegram_url = socials.telegram_url ?? telegram_url
       website_url = socials.website_url
     }
 
@@ -190,6 +293,8 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     ok: true,
     timeframes,
+    sources,
+    apiErrors: Object.keys(apiErrors).length > 0 ? apiErrors : undefined,
     imported: rows.length,
     uniqueWallets: wallets.length,
     enrich,

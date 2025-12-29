@@ -78,6 +78,7 @@ export async function POST(request: NextRequest) {
 
   const apiKey = process.env.HELIUS_API_KEY
   const webhookId = process.env.HELIUS_WEBHOOK_ID
+  const webhookAuthToken = process.env.HELIUS_WEBHOOK_AUTH_TOKEN
 
   if (!apiKey || apiKey.length === 0) {
     return NextResponse.json({ error: "Missing HELIUS_API_KEY" }, { status: 500 })
@@ -109,12 +110,15 @@ export async function POST(request: NextRequest) {
 
     const current = await heliusGetWebhook(webhookId, apiKey)
 
+    const desiredAuthHeader =
+      typeof webhookAuthToken === "string" && webhookAuthToken.trim().length > 0 ? `Bearer ${webhookAuthToken.trim()}` : null
+
     const updateBody: Partial<HeliusWebhook> = {
       webhookURL: current.webhookURL,
       transactionTypes: current.transactionTypes,
       accountAddresses: addresses,
       webhookType: current.webhookType,
-      authHeader: current.authHeader,
+      authHeader: desiredAuthHeader ?? current.authHeader,
       encoding: current.encoding,
       txnStatus: current.txnStatus,
     }
