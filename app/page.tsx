@@ -1,6 +1,7 @@
 "use client"
 
 import { Header } from "@/components/header"
+import { useEffect, useMemo, useState } from "react"
 
 export default function HomePage() {
   // Large detailed ASCII laughing-crying emoji (like reference image)
@@ -46,8 +47,54 @@ export default function HomePage() {
  ████  ██  ██ ████  ██ ██  ██  ████  
 `
 
-  // Clean ticker text
-  const tickerText = "NO CRY CASINO"
+  const [tickerItems, setTickerItems] = useState<string[]>(["LOADING DAILY KOL PNL"])
+
+  useEffect(() => {
+    let alive = true
+
+    const formatSol = (v: number) => {
+      const sign = v > 0 ? "+" : v < 0 ? "-" : ""
+      const abs = Math.abs(v)
+      return `${sign}${abs.toFixed(2)} SOL`
+    }
+
+    const load = async () => {
+      try {
+        const res = await fetch("/api/analytics/leaderboard?timeframe=daily&eligibility=0", { cache: "no-store" })
+        const json = (await res.json().catch(() => null)) as any
+        const rows = Array.isArray(json?.rows) ? (json.rows as any[]) : []
+
+        const items = rows
+          .slice(0, 30)
+          .map((r) => {
+            const name = (typeof r?.display_name === "string" && r.display_name.trim().length > 0 ? r.display_name.trim() : null) ??
+              (typeof r?.wallet_address === "string" ? r.wallet_address.slice(0, 6) : "KOL")
+            const profit = Number(r?.profit_sol)
+            const profitText = Number.isFinite(profit) ? formatSol(profit) : "0.00 SOL"
+            return `${name} ${profitText}`
+          })
+          .filter((s) => typeof s === "string" && s.length > 0)
+
+        if (alive) setTickerItems(items.length > 0 ? items : ["NO DAILY DATA"])
+      } catch {
+        if (alive) setTickerItems(["NO DAILY DATA"])
+      }
+    }
+
+    void load()
+    const t = setInterval(load, 60_000)
+
+    return () => {
+      alive = false
+      clearInterval(t)
+    }
+  }, [])
+
+  const tickerText = useMemo(() => {
+    const items = tickerItems.length > 0 ? tickerItems : ["NO DAILY DATA"]
+    const doubled = [...items, ...items]
+    return doubled
+  }, [tickerItems])
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-black text-[#7CFF6B]">
@@ -57,9 +104,9 @@ export default function HomePage() {
         {/* Scrolling ticker */}
         <div className="ncc-ticker">
           <div className="ncc-ticker-track">
-            {Array.from({ length: 20 }).map((_, i) => (
+            {tickerText.map((t, i) => (
               <span key={i} className="ncc-ticker-item">
-                ◆ {tickerText} ◆
+                ◆ {t} ◆
               </span>
             ))}
           </div>
