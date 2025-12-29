@@ -38,6 +38,8 @@ type HeliusEvent = {
   accountData?: Array<{ account: string; nativeBalanceChange?: number; tokenBalanceChanges?: Array<{ mint: string; rawTokenAmount: { tokenAmount: string } }> }>
 }
 
+const WSOL_MINT = "So11111111111111111111111111111111111111112"
+
 export type WalletPnL = {
   wallet_address: string
   net_sol_lamports: number
@@ -75,8 +77,47 @@ export function computeNetSolLamports(raw: HeliusEvent, wallet: string): number 
     .map((a: any) => toNumber(a?.nativeBalanceChange))
     .filter((n) => Number.isFinite(n) && n !== 0)
 
-  if (nativeBalanceChanges.length > 0) {
-    return nativeBalanceChanges.reduce((sum, n) => sum + n, 0)
+  const usedNativeBalanceChange = nativeBalanceChanges.length > 0
+  if (usedNativeBalanceChange) {
+    net += nativeBalanceChanges.reduce((sum, n) => sum + n, 0)
+  }
+
+  // WSOL (wrapped SOL) changes are not reflected in nativeBalanceChange.
+  // We treat WSOL deltas as SOL lamports for PnL parity.
+  let sawWsolBalanceChange = false
+  for (const acc of accountData) {
+    if (acc?.account !== wallet) continue
+    const changes = Array.isArray((acc as any)?.tokenBalanceChanges) ? (acc as any).tokenBalanceChanges : []
+    for (const tc of changes) {
+      const mint = tc?.mint
+      if (mint !== WSOL_MINT) continue
+      // rawTokenAmount.tokenAmount is base units (lamports) for WSOL.
+      const amtBase = toNumber(tc?.rawTokenAmount?.tokenAmount)
+      if (amtBase !== 0) {
+        net += amtBase
+        sawWsolBalanceChange = true
+      }
+    }
+  }
+
+  // If we already used nativeBalanceChange, don't also process nativeTransfers/swap native fields
+  // or we will double-count native SOL deltas.
+  if (usedNativeBalanceChange) {
+    // Some payloads include tokenTransfers but not tokenBalanceChanges.
+    // Only use tokenTransfers as a fallback to avoid double-counting.
+    if (!sawWsolBalanceChange) {
+      const tokenTransfers = Array.isArray(raw?.tokenTransfers) ? raw.tokenTransfers : []
+      for (const t of tokenTransfers) {
+        if (t?.mint !== WSOL_MINT) continue
+        const amtSol = toNumber(t?.tokenAmount)
+        if (!amtSol) continue
+        const amtLamports = Math.round(amtSol * 1e9)
+        if (t?.fromUserAccount === wallet) net -= amtLamports
+        if (t?.toUserAccount === wallet) net += amtLamports
+      }
+    }
+
+    return net
   }
 
   const native = Array.isArray(raw?.nativeTransfers) ? raw.nativeTransfers : []
@@ -100,6 +141,16 @@ export function computeNetSolLamports(raw: HeliusEvent, wallet: string): number 
     }
   }
   walkSwap(swap)
+
+  const tokenTransfers = Array.isArray(raw?.tokenTransfers) ? raw.tokenTransfers : []
+  for (const t of tokenTransfers) {
+    if (t?.mint !== WSOL_MINT) continue
+    const amtSol = toNumber(t?.tokenAmount)
+    if (!amtSol) continue
+    const amtLamports = Math.round(amtSol * 1e9)
+    if (t?.fromUserAccount === wallet) net -= amtLamports
+    if (t?.toUserAccount === wallet) net += amtLamports
+  }
 
   return net
 }
@@ -160,7 +211,20 @@ export function computeSwapVolumeSol(raw: HeliusEvent, wallet: string): number {
   let volume = 0
 
   const swap = raw?.events?.swap
-  if (!swap) return 0
+  if (!swap) {
+    // Fallback: many enhanced txs (e.g. PumpFun) omit events.swap.
+    // Approximate swap volume using WSOL token transfers involving the wallet.
+    const tokenTransfers = Array.isArray(raw?.tokenTransfers) ? raw.tokenTransfers : []
+    for (const t of tokenTransfers) {
+      if (t?.mint !== WSOL_MINT) continue
+      const amtSol = toNumber(t?.tokenAmount)
+      if (!amtSol) continue
+      const amtLamports = Math.round(Math.abs(amtSol) * 1e9)
+      if (t?.fromUserAccount === wallet) volume += amtLamports
+      if (t?.toUserAccount === wallet) volume += amtLamports
+    }
+    return volume
+  }
 
   const processSwap = (s: SwapEvent) => {
     // Native input
