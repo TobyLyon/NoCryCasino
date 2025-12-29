@@ -96,74 +96,10 @@ async function getSolPriceUsd(): Promise<number> {
 }
 
 function timeframeToCutoffIso(timeframe: TimeFrame): string {
-  const tz = "America/New_York"
-
-  const dtfParts = (date: Date) => {
-    const fmt = new Intl.DateTimeFormat("en-US", {
-      timeZone: tz,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      weekday: "short",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    })
-    const parts = fmt.formatToParts(date)
-    const get = (type: string) => parts.find((p) => p.type === type)?.value
-    const year = Number(get("year") ?? 0)
-    const month = Number(get("month") ?? 0)
-    const day = Number(get("day") ?? 0)
-    const hour = Number(get("hour") ?? 0)
-    const minute = Number(get("minute") ?? 0)
-    const second = Number(get("second") ?? 0)
-    const weekdayRaw = String(get("weekday") ?? "")
-    const weekdayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
-    const weekday = weekdayMap[weekdayRaw] ?? 0
-    return { year, month, day, hour, minute, second, weekday }
-  }
-
-  const getTimeZoneOffsetMs = (date: Date) => {
-    const p = dtfParts(date)
-    const asUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second)
-    return asUtc - date.getTime()
-  }
-
-  const zonedTimeToUtcMs = (args: { year: number; month: number; day: number; hour: number; minute: number; second: number }) => {
-    const base = Date.UTC(args.year, args.month - 1, args.day, args.hour, args.minute, args.second)
-    let utc = base
-    for (let i = 0; i < 2; i += 1) {
-      const off = getTimeZoneOffsetMs(new Date(utc))
-      utc = base - off
-    }
-    return utc
-  }
-
   const now = new Date()
-  if (timeframe === "monthly") {
-    const dayMs = 24 * 60 * 60 * 1000
-    return new Date(now.getTime() - 30 * dayMs).toISOString()
-  }
-
-  const p = dtfParts(now)
-  const todayUtcBase = Date.UTC(p.year, p.month - 1, p.day)
-
-  if (timeframe === "weekly") {
-    const dayMs = 24 * 60 * 60 * 1000
-    const startUtcBase = todayUtcBase - 6 * dayMs
-    const start = new Date(startUtcBase)
-    const y = start.getUTCFullYear()
-    const m = start.getUTCMonth() + 1
-    const d = start.getUTCDate()
-    return new Date(zonedTimeToUtcMs({ year: y, month: m, day: d, hour: 0, minute: 0, second: 0 })).toISOString()
-  }
-
-  if (timeframe === "daily") {
-    return new Date(zonedTimeToUtcMs({ year: p.year, month: p.month, day: p.day, hour: 0, minute: 0, second: 0 })).toISOString()
-  }
-
-  return new Date(zonedTimeToUtcMs({ year: p.year, month: p.month, day: p.day, hour: 0, minute: 0, second: 0 })).toISOString()
+  const dayMs = 24 * 60 * 60 * 1000
+  const days = timeframe === "monthly" ? 30 : timeframe === "weekly" ? 7 : 1
+  return new Date(now.getTime() - days * dayMs).toISOString()
 }
 
 export async function GET(request: NextRequest) {

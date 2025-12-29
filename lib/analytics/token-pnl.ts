@@ -69,6 +69,16 @@ function toNumber(v: unknown): number {
 export function computeNetSolLamports(raw: HeliusEvent, wallet: string): number {
   let net = 0
 
+  const accountData = Array.isArray(raw?.accountData) ? raw.accountData : []
+  const nativeBalanceChanges = accountData
+    .filter((a) => a?.account === wallet)
+    .map((a: any) => toNumber(a?.nativeBalanceChange))
+    .filter((n) => Number.isFinite(n) && n !== 0)
+
+  if (nativeBalanceChanges.length > 0) {
+    return nativeBalanceChanges.reduce((sum, n) => sum + n, 0)
+  }
+
   const native = Array.isArray(raw?.nativeTransfers) ? raw.nativeTransfers : []
   for (const t of native) {
     const from = t?.fromUserAccount
