@@ -63,6 +63,36 @@ async function heliusFetchTxPage(args: {
   return Array.isArray(json) ? (json as HeliusEnhancedTx[]) : []
 }
 
+async function upsertBatches(args: {
+  supabase: ReturnType<typeof createServiceClient>
+  txEvents: Array<{ signature: string; block_time: string | null; slot: number | null; source: string; raw: any }>
+  links: Array<{ signature: string; wallet_address: string }>
+  batchSize?: number
+}): Promise<{ eventsUpserted: number; linksUpserted: number }> {
+  const batchSize = typeof args.batchSize === "number" && args.batchSize > 0 ? Math.floor(args.batchSize) : 200
+
+  let eventsUpserted = 0
+  let linksUpserted = 0
+
+  for (let i = 0; i < args.txEvents.length; i += batchSize) {
+    const batch = args.txEvents.slice(i, i + batchSize)
+    if (batch.length === 0) continue
+    const { error } = await args.supabase.from("tx_events").upsert(batch, { onConflict: "signature" })
+    if (error) throw new Error(error.message)
+    eventsUpserted += batch.length
+  }
+
+  for (let i = 0; i < args.links.length; i += batchSize) {
+    const batch = args.links.slice(i, i + batchSize)
+    if (batch.length === 0) continue
+    const { error } = await args.supabase.from("tx_event_wallets").upsert(batch)
+    if (error) throw new Error(error.message)
+    linksUpserted += batch.length
+  }
+
+  return { eventsUpserted, linksUpserted }
+}
+
 export async function POST(request: NextRequest) {
   const limited = rateLimit({ request, key: "admin:helius:transactions:backfill", limit: 10, windowMs: 60_000 })
   if (limited) return limited
@@ -164,6 +194,9 @@ export async function POST(request: NextRequest) {
 
         let minTsInPage: number | null = null
 
+        const txEventsBatch: Array<{ signature: string; block_time: string | null; slot: number | null; source: string; raw: any }> = []
+        const linksBatch: Array<{ signature: string; wallet_address: string }> = []
+
         for (const tx of page) {
           const sig = typeof tx?.signature === "string" ? tx.signature : null
           if (!sig) continue
@@ -180,22 +213,23 @@ export async function POST(request: NextRequest) {
           const block_time = toIsoFromSeconds(tx?.timestamp)
           const slot = typeof tx?.slot === "number" && Number.isFinite(tx.slot) ? tx.slot : null
 
-          const { error: upsertError } = await supabase
-            .from("tx_events")
-            .upsert({ signature: sig, block_time, slot, source: "helius_backfill", raw: tx }, { onConflict: "signature" })
+          txEventsBatch.push({ signature: sig, block_time, slot, source: "helius_backfill", raw: tx })
+          linksBatch.push({ signature: sig, wallet_address: wallet })
+        }
 
-          if (upsertError) {
-            return NextResponse.json({ error: upsertError.message }, { status: 500 })
+        if (txEventsBatch.length > 0) {
+          try {
+            const { eventsUpserted: e, linksUpserted: l } = await upsertBatches({
+              supabase,
+              txEvents: txEventsBatch,
+              links: linksBatch,
+              batchSize: 200,
+            })
+            eventsUpserted += e
+            linksUpserted += l
+          } catch (err: any) {
+            return NextResponse.json({ error: err?.message ?? String(err) }, { status: 500 })
           }
-
-          eventsUpserted += 1
-
-          const { error: linkError } = await supabase.from("tx_event_wallets").upsert({ signature: sig, wallet_address: wallet })
-          if (linkError) {
-            return NextResponse.json({ error: linkError.message }, { status: 500 })
-          }
-
-          linksUpserted += 1
         }
 
         const lastSig = page[page.length - 1]?.signature
