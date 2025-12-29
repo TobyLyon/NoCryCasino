@@ -5,6 +5,47 @@ import { rateLimit } from "@/lib/api/guards"
 
 type TimeFrame = "daily" | "weekly" | "monthly"
 
+const WSOL_MINT = "So11111111111111111111111111111111111111112"
+
+function isTradeLike(raw: any, wallet: string): boolean {
+  if (!raw || typeof raw !== "object") return false
+  if (raw?.transactionError?.error) return false
+
+  const t = typeof raw?.type === "string" ? raw.type : ""
+  if (t === "SWAP" || t === "SWAP_EXACT_OUT" || t === "SWAP_WITH_PRICE_IMPACT") return true
+
+  if (t !== "TRANSFER" && t !== "UNKNOWN") return false
+
+  const tokenTransfers = Array.isArray(raw?.tokenTransfers) ? raw.tokenTransfers : []
+  const accountData = Array.isArray(raw?.accountData) ? raw.accountData : []
+
+  const hasWsolTransfer = tokenTransfers.some(
+    (x: any) =>
+      x?.mint === WSOL_MINT && (x?.fromUserAccount === wallet || x?.toUserAccount === wallet),
+  )
+  const hasNonWsolTransfer = tokenTransfers.some(
+    (x: any) =>
+      typeof x?.mint === "string" && x.mint.length > 0 && x.mint !== WSOL_MINT && (x?.fromUserAccount === wallet || x?.toUserAccount === wallet),
+  )
+
+  let hasWsolBalance = false
+  let hasNonWsolBalance = false
+  for (const acc of accountData) {
+    const tbc = Array.isArray(acc?.tokenBalanceChanges) ? acc.tokenBalanceChanges : []
+    for (const tc of tbc) {
+      const mint = tc?.mint
+      const belongsToWallet = tc?.userAccount === wallet || acc?.account === wallet
+      if (!belongsToWallet) continue
+      if (mint === WSOL_MINT) hasWsolBalance = true
+      if (typeof mint === "string" && mint.length > 0 && mint !== WSOL_MINT) hasNonWsolBalance = true
+    }
+  }
+
+  const hasWsol = hasWsolTransfer || hasWsolBalance
+  const hasOther = hasNonWsolTransfer || hasNonWsolBalance
+  return hasWsol && hasOther
+}
+
 type KolRow = {
   wallet_address: string
   display_name: string | null
@@ -205,6 +246,7 @@ export async function GET(request: NextRequest) {
       seen.add(sig)
 
       const raw = l?.tx_events?.raw
+      if (!isTradeLike(raw, wallet)) continue
       const pnl = analyzeWalletPnL(raw, wallet)
       const arr = walletPnLs.get(wallet) ?? []
       arr.push(pnl)
