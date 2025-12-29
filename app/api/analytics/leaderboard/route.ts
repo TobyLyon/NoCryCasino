@@ -305,7 +305,7 @@ export async function GET(request: NextRequest) {
       1000,
       Math.max(100, Number.isFinite(pageSizeNum) ? pageSizeNum : 500),
     )
-    const defaultMaxLinks = timeframe === "daily" ? 50_000 : timeframe === "weekly" ? 200_000 : 400_000
+    const defaultMaxLinks = timeframe === "daily" ? 10_000 : timeframe === "weekly" ? 50_000 : 100_000
     const maxLinks = Math.min(
       600_000,
       Math.max(5_000, Number.isFinite(maxLinksNum) ? maxLinksNum : defaultMaxLinks),
@@ -343,13 +343,20 @@ export async function GET(request: NextRequest) {
       wallets: string[]
     }>
 
-    for (let offset = 0; offset < maxLinks; offset += pageSize) {
-      const { data: evData, error: evError } = await supabase
+    let processed = 0
+    let cursorBlockTime: string | null = null
+    while (processed < maxLinks) {
+      let q = supabase
         .from("tx_events")
         .select("signature, block_time, raw")
         .gte("block_time", cutoffIso)
         .order("block_time", { ascending: false })
-        .range(offset, offset + pageSize - 1)
+        .limit(pageSize)
+      if (cursorBlockTime) {
+        q = q.lt("block_time", cursorBlockTime)
+      }
+
+      const { data: evData, error: evError } = await q
 
       if (evError) {
         return NextResponse.json({ error: evError.message }, { status: 500 })
@@ -357,9 +364,13 @@ export async function GET(request: NextRequest) {
 
       const rows = (evData ?? []) as any[]
       if (rows.length === 0) break
+      processed += rows.length
 
       const sigs = rows.map((r) => String(r?.signature ?? "")).filter((s) => s.length > 0)
       if (sigs.length === 0) {
+        const lastBt = rows[rows.length - 1]?.block_time
+        cursorBlockTime = lastBt ? String(lastBt) : null
+        if (!cursorBlockTime) break
         if (rows.length < pageSize) break
         continue
       }
@@ -394,6 +405,9 @@ export async function GET(request: NextRequest) {
         events.push({ signature, block_time, raw, wallets })
       }
 
+      const lastBt = rows[rows.length - 1]?.block_time
+      cursorBlockTime = lastBt ? String(lastBt) : null
+      if (!cursorBlockTime) break
       if (rows.length < pageSize) break
     }
 
