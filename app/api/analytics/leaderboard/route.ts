@@ -630,8 +630,28 @@ export async function GET(request: NextRequest) {
         }
       },
     ) => {
+      const isPumpNoSolDelta = item.reason === "no_sol_delta" && /PUMP/i.test(item.source)
+      const hasPumpNoSolDelta = dbg.dropped.some((x) => x.reason === "no_sol_delta" && /PUMP/i.test(x.source))
+
       if (dbg.dropped.length < 10) {
         dbg.dropped.push(item)
+        return
+      }
+
+      if (isPumpNoSolDelta && !hasPumpNoSolDelta) {
+        const idxNotTradeLike = dbg.dropped.findIndex((x) => x.reason === "not_trade_like")
+        if (idxNotTradeLike >= 0) {
+          dbg.dropped[idxNotTradeLike] = item
+          return
+        }
+
+        const idxOtherNoSol = dbg.dropped.findIndex((x) => x.reason === "no_sol_delta" && !/PUMP/i.test(x.source))
+        if (idxOtherNoSol >= 0) {
+          dbg.dropped[idxOtherNoSol] = item
+          return
+        }
+
+        dbg.dropped[0] = item
         return
       }
 
