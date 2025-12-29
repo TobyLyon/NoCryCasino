@@ -92,6 +92,12 @@ export async function POST(request: NextRequest) {
     const body = (await request.json().catch(() => null)) as any
     const limit = typeof body?.limit === "number" && Number.isFinite(body.limit) && body.limit > 0 ? Math.floor(body.limit) : 2000
 
+    const transactionTypesRaw = body?.transactionTypes
+    const transactionTypesInput = Array.isArray(transactionTypesRaw)
+      ? uniqStrings(transactionTypesRaw.map((v: any) => String(v)))
+      : null
+    const transactionTypes = transactionTypesInput && transactionTypesInput.length > 0 ? transactionTypesInput.slice(0, 100) : null
+
     const supabase = createServiceClient()
     const { data: kols, error } = await supabase
       .from("kols")
@@ -115,7 +121,7 @@ export async function POST(request: NextRequest) {
 
     const updateBody: Partial<HeliusWebhook> = {
       webhookURL: current.webhookURL,
-      transactionTypes: current.transactionTypes,
+      transactionTypes: transactionTypes ?? current.transactionTypes,
       accountAddresses: addresses,
       webhookType: current.webhookType,
       authHeader: desiredAuthHeader ?? current.authHeader,
