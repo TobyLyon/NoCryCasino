@@ -178,17 +178,26 @@ export async function GET(request: NextRequest) {
 
     const debug = url.searchParams.get("debug") === "1" || url.searchParams.get("debug") === "true"
     const applyEligibility = !(url.searchParams.get("eligibility") === "0" || url.searchParams.get("eligibility") === "false")
+
+    const kolLimitParam = url.searchParams.get("kolLimit")
+    const pageSizeParam = url.searchParams.get("pageSize")
+    const maxLinksParam = url.searchParams.get("maxLinks")
+
+    const kolLimitNum = kolLimitParam && kolLimitParam.trim().length > 0 ? Number(kolLimitParam) : NaN
+    const pageSizeNum = pageSizeParam && pageSizeParam.trim().length > 0 ? Number(pageSizeParam) : NaN
+    const maxLinksNum = maxLinksParam && maxLinksParam.trim().length > 0 ? Number(maxLinksParam) : NaN
+
     const kolLimit = Math.min(
       5000,
-      Math.max(50, Number.isFinite(Number(url.searchParams.get("kolLimit"))) ? Number(url.searchParams.get("kolLimit")) : 2000),
+      Math.max(50, Number.isFinite(kolLimitNum) ? kolLimitNum : 2000),
     )
     const pageSize = Math.min(
       10_000,
-      Math.max(500, Number.isFinite(Number(url.searchParams.get("pageSize"))) ? Number(url.searchParams.get("pageSize")) : 5000),
+      Math.max(500, Number.isFinite(pageSizeNum) ? pageSizeNum : 5000),
     )
     const maxLinks = Math.min(
       600_000,
-      Math.max(10_000, Number.isFinite(Number(url.searchParams.get("maxLinks"))) ? Number(url.searchParams.get("maxLinks")) : 200_000),
+      Math.max(10_000, Number.isFinite(maxLinksNum) ? maxLinksNum : 200_000),
     )
 
     const cutoffIso = timeframeToCutoffIso(timeframe)
