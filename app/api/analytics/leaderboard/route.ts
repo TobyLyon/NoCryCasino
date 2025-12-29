@@ -344,30 +344,52 @@ export async function GET(request: NextRequest) {
     }>
 
     for (let offset = 0; offset < maxLinks; offset += pageSize) {
-      const { data, error } = await supabase
+      const { data: evData, error: evError } = await supabase
         .from("tx_events")
-        .select("signature, block_time, raw, tx_event_wallets(wallet_address)")
+        .select("signature, block_time, raw")
         .gte("block_time", cutoffIso)
         .order("block_time", { ascending: false })
         .range(offset, offset + pageSize - 1)
 
-      if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 })
+      if (evError) {
+        return NextResponse.json({ error: evError.message }, { status: 500 })
       }
 
-      const rows = (data ?? []) as any[]
+      const rows = (evData ?? []) as any[]
       if (rows.length === 0) break
+
+      const sigs = rows.map((r) => String(r?.signature ?? "")).filter((s) => s.length > 0)
+      if (sigs.length === 0) {
+        if (rows.length < pageSize) break
+        continue
+      }
+
+      const { data: linkData, error: linkError } = await supabase
+        .from("tx_event_wallets")
+        .select("signature, wallet_address")
+        .in("signature", sigs)
+
+      if (linkError) {
+        return NextResponse.json({ error: linkError.message }, { status: 500 })
+      }
+
+      const bySig = new Map<string, string[]>()
+      for (const l of (linkData ?? []) as any[]) {
+        const sig = String(l?.signature ?? "")
+        const w = String(l?.wallet_address ?? "")
+        if (!sig || !w) continue
+        if (!trackedSet.has(w)) continue
+        const arr = bySig.get(sig) ?? []
+        arr.push(w)
+        bySig.set(sig, arr)
+      }
 
       for (const r of rows) {
         const signature = String(r?.signature ?? "")
         if (!signature) continue
         const block_time = (r?.block_time ?? null) as string | null
         const raw = r?.raw
-        const wallets = Array.isArray(r?.tx_event_wallets)
-          ? (r.tx_event_wallets as any[])
-              .map((w) => String(w?.wallet_address ?? ""))
-              .filter((w) => trackedSet.has(w))
-          : []
+        const wallets = bySig.get(signature) ?? []
         if (wallets.length === 0) continue
         events.push({ signature, block_time, raw, wallets })
       }
