@@ -74,7 +74,10 @@ export function KolLeaderboard() {
       setLoading(true)
       setError(null)
 
-      const res = await fetch(`/api/analytics/leaderboard?timeframe=${encodeURIComponent(timeFrame)}`)
+      const res = await fetch(
+        `/api/analytics/leaderboard?timeframe=${encodeURIComponent(timeFrame)}&eligibility=0&kolLimit=5000`,
+        { cache: "no-store" },
+      )
       const json = (await res.json()) as any
 
       if (!res.ok || !json?.ok) {
