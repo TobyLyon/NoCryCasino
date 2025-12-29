@@ -77,6 +77,22 @@ function extractSocials(html: string): { twitter_url: string | null; telegram_ur
   return { twitter_url, telegram_url, website_url }
 }
 
+function extractProfileMeta(html: string): { display_name: string | null; avatar_url: string | null } {
+  const titleMatch = html.match(/property=["']og:title["']\s+content=["']([^"']+)["']/i)
+  const imageMatch = html.match(/property=["']og:image["']\s+content=["']([^"']+)["']/i)
+
+  const display_name_raw = titleMatch ? titleMatch[1] : null
+  const display_name =
+    typeof display_name_raw === "string" && display_name_raw.trim().length > 0
+      ? display_name_raw.replace(/\s+/g, " ").trim()
+      : null
+
+  const avatar_raw = imageMatch ? imageMatch[1] : null
+  const avatar_url = typeof avatar_raw === "string" && avatar_raw.trim().length > 0 ? avatar_raw.trim() : null
+
+  return { display_name, avatar_url }
+}
+
 async function fetchLeaderboardApi(args: { timeframe: 1 | 7 | 30; page: number; pageSize: number }): Promise<
   Array<{ wallet_address: string; name?: string | null; twitter?: string | null; telegram?: string | null }>
 > {
@@ -149,11 +165,44 @@ async function fetchLeaderboardApi(args: { timeframe: 1 | 7 | 30; page: number; 
 }
 
 async function fetchText(url: string): Promise<string> {
+  const now = Date.now()
+  ;(globalThis as any).__kolscanCookieCache = (globalThis as any).__kolscanCookieCache ?? { cookie: "", ts: 0 }
+  const cache = (globalThis as any).__kolscanCookieCache as { cookie: string; ts: number }
+
+  let cookieHeader = cache.cookie
+  if (!cookieHeader || now - cache.ts > 10 * 60_000) {
+    const warm = await fetch("https://kolscan.io", {
+      method: "GET",
+      headers: {
+        "user-agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+      cache: "no-store",
+    })
+
+    const getSetCookie = (warm.headers as any).getSetCookie as undefined | (() => string[])
+    const setCookies = typeof getSetCookie === "function" ? getSetCookie.call(warm.headers) : []
+    const setCookieStr = warm.headers.get("set-cookie")
+
+    const parts = [...setCookies, ...(setCookieStr ? [setCookieStr] : [])]
+      .flatMap((v) => String(v).split(/,(?=[^;]+?=)/g))
+      .map((v) => v.split(";")[0]?.trim())
+      .filter((v): v is string => !!v)
+
+    cookieHeader = parts.join("; ")
+    cache.cookie = cookieHeader
+    cache.ts = now
+  }
+
   const res = await fetch(url, {
     method: "GET",
     headers: {
-      "user-agent": "NoCryCasinoBot/1.0 (+https://nocrycasino.com)",
+      "user-agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
       accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "accept-language": "en-US,en;q=0.9",
+      ...(cookieHeader ? { cookie: cookieHeader } : null),
     },
     cache: "no-store",
   })
@@ -188,6 +237,7 @@ export async function POST(request: NextRequest) {
   const limit = typeof body?.limit === "number" && Number.isFinite(body.limit) && body.limit > 0 ? Math.floor(body.limit) : 200
   const enrich = body?.enrich === true
   const trackImported = body?.trackImported === true
+  const fillMissingOnly = body?.fillMissingOnly !== false
 
   const allAccounts: Array<{ wallet: string; name: string | null; twitter?: string | null; telegram?: string | null; timeframe: "daily" | "weekly" | "monthly"; rank: number }> = []
   const sources: Record<string, "api" | "html"> = {}
@@ -247,6 +297,16 @@ export async function POST(request: NextRequest) {
 
   const supabase = createServiceClient()
 
+  const { data: existingKols } = await supabase
+    .from("kols")
+    .select("wallet_address, display_name, avatar_url")
+    .in("wallet_address", wallets)
+    .limit(1000)
+
+  const existingByWallet = new Map(
+    (existingKols ?? []).map((k: any) => [String(k.wallet_address), { display_name: k.display_name ?? null, avatar_url: k.avatar_url ?? null }]),
+  )
+
   const rows: any[] = []
 
   const shouldSetTrackedRank = trackImported && timeframes.length === 1
@@ -254,6 +314,8 @@ export async function POST(request: NextRequest) {
 
   for (let i = 0; i < deduped.length; i += 1) {
     const a = deduped[i]!
+
+    const existing = existingByWallet.get(a.wallet) ?? { display_name: null, avatar_url: null }
 
     let twitter_url: string | null = typeof a.twitter === "string" && a.twitter.trim().length > 0 ? a.twitter.trim() : null
     let telegram_url: string | null = typeof a.telegram === "string" && a.telegram.trim().length > 0 ? a.telegram.trim() : null
@@ -266,6 +328,18 @@ export async function POST(request: NextRequest) {
       twitter_url = socials.twitter_url ?? twitter_url
       telegram_url = socials.telegram_url ?? telegram_url
       website_url = socials.website_url
+
+      const profile = extractProfileMeta(accountHtml)
+      if (fillMissingOnly) {
+        if (!existing.display_name && profile.display_name) a.name = profile.display_name
+      } else {
+        if (profile.display_name) a.name = profile.display_name
+      }
+      if (profile.avatar_url) {
+        if (!fillMissingOnly || !existing.avatar_url) {
+          ;(a as any).__avatar_url = profile.avatar_url
+        }
+      }
     }
 
     const row: any = {
@@ -274,6 +348,8 @@ export async function POST(request: NextRequest) {
     }
 
     if (a.name) row.display_name = a.name
+    const avatarFromEnrich = (a as any)?.__avatar_url
+    if (typeof avatarFromEnrich === "string" && avatarFromEnrich.trim().length > 0) row.avatar_url = avatarFromEnrich.trim()
     if (twitter_url) row.twitter_url = twitter_url
     if (telegram_url) row.telegram_url = telegram_url
     if (website_url) row.website_url = website_url

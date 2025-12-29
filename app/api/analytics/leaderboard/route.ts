@@ -184,7 +184,7 @@ export async function GET(request: NextRequest) {
         .eq("is_tracked", true)
         .order("tracked_rank", { ascending: true, nullsFirst: false })
         .order("updated_at", { ascending: false })
-        .limit(200),
+        .limit(500),
       getSolPriceUsd(),
     ])
 

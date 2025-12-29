@@ -68,6 +68,26 @@ function extractWalletAddresses(evt: any): string[] {
     }
   }
 
+  const swap = evt?.events?.swap
+  const walkSwap = (s: any) => {
+    if (!s) return
+    add(s?.nativeInput?.account)
+    add(s?.nativeOutput?.account)
+
+    if (Array.isArray(s?.tokenInputs)) {
+      for (const ti of s.tokenInputs) add(ti?.userAccount)
+    }
+
+    if (Array.isArray(s?.tokenOutputs)) {
+      for (const to of s.tokenOutputs) add(to?.userAccount)
+    }
+
+    if (Array.isArray(s?.innerSwaps)) {
+      for (const inner of s.innerSwaps) walkSwap(inner)
+    }
+  }
+  walkSwap(swap)
+
   return Array.from(out)
 }
 

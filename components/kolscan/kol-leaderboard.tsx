@@ -34,8 +34,17 @@ function formatSol(n: number) {
 function Avatar({ src, alt, size, className }: { src: string | null; alt: string; size: number; className?: string }) {
   const [failed, setFailed] = useState(false)
 
+  const initial = typeof alt === "string" && alt.trim().length > 0 ? alt.trim()[0]!.toUpperCase() : "?"
+
   if (!src || failed) {
-    return <div className={className ?? ""} style={{ height: size, width: size }} />
+    return (
+      <div
+        className={`${className ?? ""} flex items-center justify-center font-semibold text-[#d5d6d0]`}
+        style={{ height: size, width: size }}
+      >
+        {initial}
+      </div>
+    )
   }
 
   return (
