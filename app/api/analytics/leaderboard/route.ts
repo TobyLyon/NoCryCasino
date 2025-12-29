@@ -7,14 +7,38 @@ type TimeFrame = "daily" | "weekly" | "monthly"
 
 const WSOL_MINT = "So11111111111111111111111111111111111111112"
 
+const DEX_SOURCES = new Set([
+  "PUMP_FUN",
+  "PUMP_AMM",
+  "JUPITER",
+  "RAYDIUM",
+  "ORCA",
+  "LIFINITY",
+  "MERCURIAL",
+  "SABER",
+  "SAROS",
+  "CREMA",
+  "ALDRIN",
+  "CYKURA",
+])
+
 function isTradeLike(raw: any, wallet: string): boolean {
   if (!raw || typeof raw !== "object") return false
   if (raw?.transactionError?.error) return false
 
+  const source = typeof raw?.source === "string" ? raw.source : ""
+  if (source === "SYSTEM_PROGRAM") return false
+
   const t = typeof raw?.type === "string" ? raw.type : ""
-  if (t === "SWAP" || t === "SWAP_EXACT_OUT" || t === "SWAP_WITH_PRICE_IMPACT") return true
+  if (t === "SWAP" || t === "SWAP_EXACT_OUT" || t === "SWAP_WITH_PRICE_IMPACT") {
+    // For SWAP types, require a DEX-ish source when provided (avoid misc system activity)
+    return source.length === 0 || source === "UNKNOWN" || DEX_SOURCES.has(source)
+  }
 
   if (t !== "TRANSFER" && t !== "UNKNOWN") return false
+
+  // For non-swap types, only count DEX-ish sources; otherwise it's likely a funding/transfer tx.
+  if (!DEX_SOURCES.has(source)) return false
 
   const tokenTransfers = Array.isArray(raw?.tokenTransfers) ? raw.tokenTransfers : []
   const accountData = Array.isArray(raw?.accountData) ? raw.accountData : []
