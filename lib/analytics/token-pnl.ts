@@ -6,6 +6,8 @@
 type TokenTransfer = {
   fromUserAccount?: string
   toUserAccount?: string
+  fromTokenAccount?: string
+  toTokenAccount?: string
   mint?: string
   tokenAmount?: number
   tokenStandard?: string
@@ -49,6 +51,21 @@ type HeliusEvent = {
 
 const WSOL_MINT = "So11111111111111111111111111111111111111112"
 
+function collectWalletTokenAccounts(raw: HeliusEvent, wallet: string): Set<string> {
+  const set = new Set<string>()
+  const accountData = Array.isArray(raw?.accountData) ? raw.accountData : []
+  for (const acc of accountData) {
+    const tokenChanges = Array.isArray((acc as any)?.tokenBalanceChanges) ? (acc as any).tokenBalanceChanges : []
+    for (const tc of tokenChanges) {
+      if (tc?.userAccount !== wallet) continue
+      const tokenAccount = typeof tc?.tokenAccount === "string" ? tc.tokenAccount : undefined
+      if (tokenAccount) set.add(tokenAccount)
+      if (typeof acc?.account === "string") set.add(acc.account)
+    }
+  }
+  return set
+}
+
 export type WalletPnL = {
   wallet_address: string
   net_sol_lamports: number
@@ -79,6 +96,8 @@ function toNumber(v: unknown): number {
  */
 export function computeNetSolLamports(raw: HeliusEvent, wallet: string): number {
   let net = 0
+
+  const walletTokenAccounts = collectWalletTokenAccounts(raw, wallet)
 
   const accountData = Array.isArray(raw?.accountData) ? raw.accountData : []
   const nativeBalanceChanges = accountData
@@ -118,8 +137,10 @@ export function computeNetSolLamports(raw: HeliusEvent, wallet: string): number 
         const amtSol = toNumber(t?.tokenAmount)
         if (!amtSol) continue
         const amtLamports = Math.round(amtSol * 1e9)
-        if (t?.fromUserAccount === wallet) wsolDeltaLamports -= amtLamports
-        if (t?.toUserAccount === wallet) wsolDeltaLamports += amtLamports
+        const fromMatches = t?.fromUserAccount === wallet || (typeof t?.fromTokenAccount === "string" && walletTokenAccounts.has(t.fromTokenAccount))
+        const toMatches = t?.toUserAccount === wallet || (typeof t?.toTokenAccount === "string" && walletTokenAccounts.has(t.toTokenAccount))
+        if (fromMatches) wsolDeltaLamports -= amtLamports
+        if (toMatches) wsolDeltaLamports += amtLamports
       }
     }
 
@@ -159,8 +180,10 @@ export function computeNetSolLamports(raw: HeliusEvent, wallet: string): number 
     const amtSol = toNumber(t?.tokenAmount)
     if (!amtSol) continue
     const amtLamports = Math.round(amtSol * 1e9)
-    if (t?.fromUserAccount === wallet) net -= amtLamports
-    if (t?.toUserAccount === wallet) net += amtLamports
+    const fromMatches = t?.fromUserAccount === wallet || (typeof t?.fromTokenAccount === "string" && walletTokenAccounts.has(t.fromTokenAccount))
+    const toMatches = t?.toUserAccount === wallet || (typeof t?.toTokenAccount === "string" && walletTokenAccounts.has(t.toTokenAccount))
+    if (fromMatches) net -= amtLamports
+    if (toMatches) net += amtLamports
   }
 
   return net
@@ -176,20 +199,27 @@ export function computeTokenTransfers(
   const byMint = new Map<string, number>()
   const seenMints = new Set<string>()
 
+  const walletTokenAccounts = collectWalletTokenAccounts(raw, wallet)
+
   const transfers = Array.isArray(raw?.tokenTransfers) ? raw.tokenTransfers : []
   for (const t of transfers) {
     const from = t?.fromUserAccount
     const to = t?.toUserAccount
+    const fromTokenAccount = (t as any)?.fromTokenAccount
+    const toTokenAccount = (t as any)?.toTokenAccount
     const mint = t?.mint
     const amt = toNumber(t?.tokenAmount)
 
     if (!mint || amt === 0) continue
 
-    if (from === wallet) {
+    const fromMatches = from === wallet || (typeof fromTokenAccount === "string" && walletTokenAccounts.has(fromTokenAccount))
+    const toMatches = to === wallet || (typeof toTokenAccount === "string" && walletTokenAccounts.has(toTokenAccount))
+
+    if (fromMatches) {
       byMint.set(mint, (byMint.get(mint) ?? 0) - amt)
       seenMints.add(mint)
     }
-    if (to === wallet) {
+    if (toMatches) {
       byMint.set(mint, (byMint.get(mint) ?? 0) + amt)
       seenMints.add(mint)
     }
@@ -203,7 +233,12 @@ export function computeTokenTransfers(
       const mint = tc?.mint
       if (!mint) continue
 
-      const belongsToWallet = tc?.userAccount === wallet || acc?.account === wallet
+      const tokenAccount = typeof (tc as any)?.tokenAccount === "string" ? (tc as any).tokenAccount : undefined
+      const belongsToWallet =
+        tc?.userAccount === wallet ||
+        acc?.account === wallet ||
+        (typeof tokenAccount === "string" && walletTokenAccounts.has(tokenAccount)) ||
+        (typeof acc?.account === "string" && walletTokenAccounts.has(acc.account))
       if (!belongsToWallet) continue
       if (seenMints.has(mint)) continue
 
