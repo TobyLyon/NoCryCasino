@@ -53,9 +53,13 @@ function extractTradeLeg(raw: any, wallet: string, blockTimeMs: number): TradeLe
   const tokenDeltas = computeTokenTransfers(raw, wallet)
     .filter((t) => t.mint !== WSOL_MINT && !STABLE_MINTS.has(t.mint))
     .map((t) => ({ mint: t.mint, amt: t.net_amount }))
-  if (tokenDeltas.length !== 1) return null
 
-  const primary = tokenDeltas[0]
+  if (tokenDeltas.length === 0) return null
+
+  let primary = tokenDeltas[0]
+  for (const d of tokenDeltas) {
+    if (Math.abs(d.amt) > Math.abs(primary.amt)) primary = d
+  }
 
   const token_amount = Math.abs(primary.amt)
   if (!Number.isFinite(token_amount) || token_amount <= 0) return null
