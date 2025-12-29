@@ -149,17 +149,21 @@ function timeframeToCutoffIso(timeframe: TimeFrame): string {
   const p = dtfParts(now)
   const todayUtcBase = Date.UTC(p.year, p.month - 1, p.day)
 
+  if (timeframe === "weekly") {
+    const dayMs = 24 * 60 * 60 * 1000
+    const startUtcBase = todayUtcBase - 6 * dayMs
+    const start = new Date(startUtcBase)
+    const y = start.getUTCFullYear()
+    const m = start.getUTCMonth() + 1
+    const d = start.getUTCDate()
+    return new Date(zonedTimeToUtcMs({ year: y, month: m, day: d, hour: 0, minute: 0, second: 0 })).toISOString()
+  }
+
   if (timeframe === "daily") {
     return new Date(zonedTimeToUtcMs({ year: p.year, month: p.month, day: p.day, hour: 0, minute: 0, second: 0 })).toISOString()
   }
 
-  const daysSinceMonday = (p.weekday + 6) % 7
-  const mondayUtcBase = todayUtcBase - daysSinceMonday * 24 * 60 * 60 * 1000
-  const monday = new Date(mondayUtcBase)
-  const y = monday.getUTCFullYear()
-  const m = monday.getUTCMonth() + 1
-  const d = monday.getUTCDate()
-  return new Date(zonedTimeToUtcMs({ year: y, month: m, day: d, hour: 0, minute: 0, second: 0 })).toISOString()
+  return new Date(zonedTimeToUtcMs({ year: p.year, month: p.month, day: p.day, hour: 0, minute: 0, second: 0 })).toISOString()
 }
 
 export async function GET(request: NextRequest) {
