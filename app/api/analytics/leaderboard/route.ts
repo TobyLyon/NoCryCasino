@@ -305,10 +305,11 @@ export async function GET(request: NextRequest) {
       1000,
       Math.max(100, Number.isFinite(pageSizeNum) ? pageSizeNum : 200),
     )
-    const defaultMaxLinks = timeframe === "daily" ? 5_000 : timeframe === "weekly" ? 25_000 : 50_000
+    const defaultMaxLinks = timeframe === "daily" ? 2_000 : timeframe === "weekly" ? 25_000 : 50_000
+    const minMaxLinks = timeframe === "daily" ? 500 : timeframe === "weekly" ? 5_000 : 10_000
     const maxLinks = Math.min(
       600_000,
-      Math.max(5_000, Number.isFinite(maxLinksNum) ? maxLinksNum : defaultMaxLinks),
+      Math.max(minMaxLinks, Number.isFinite(maxLinksNum) ? maxLinksNum : defaultMaxLinks),
     )
 
     const cutoffIso = timeframeToCutoffIso(timeframe)
@@ -376,7 +377,7 @@ export async function GET(request: NextRequest) {
       }
 
       const linkData: any[] = []
-      const sigChunkSize = 100
+      const sigChunkSize = 25
       for (let i = 0; i < sigs.length; i += sigChunkSize) {
         const chunk = sigs.slice(i, i + sigChunkSize)
         const { data, error } = await supabase
