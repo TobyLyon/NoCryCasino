@@ -143,7 +143,7 @@ export async function POST(request: NextRequest) {
     const allowedTypesRaw = body?.transactionTypes
     const allowedTypesInput = Array.isArray(allowedTypesRaw)
       ? uniqStrings(allowedTypesRaw.map((v: any) => String(v)))
-      : ["SWAP", "SWAP_EXACT_OUT", "SWAP_WITH_PRICE_IMPACT"]
+      : ["SWAP", "SWAP_EXACT_OUT", "SWAP_WITH_PRICE_IMPACT", "TRANSFER", "UNKNOWN"]
     const allowedTypes = new Set(allowedTypesInput)
 
     const supabase = createServiceClient()
