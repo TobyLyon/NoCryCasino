@@ -35,7 +35,16 @@ type HeliusEvent = {
   events?: {
     swap?: SwapEvent
   }
-  accountData?: Array<{ account: string; nativeBalanceChange?: number; tokenBalanceChanges?: Array<{ mint: string; rawTokenAmount: { tokenAmount: string } }> }>
+  accountData?: Array<{
+    account: string
+    nativeBalanceChange?: number
+    tokenBalanceChanges?: Array<{
+      userAccount?: string
+      tokenAccount?: string
+      mint: string
+      rawTokenAmount: { tokenAmount: string; decimals?: number }
+    }>
+  }>
 }
 
 const WSOL_MINT = "So11111111111111111111111111111111111111112"
@@ -86,11 +95,12 @@ export function computeNetSolLamports(raw: HeliusEvent, wallet: string): number 
   // We treat WSOL deltas as SOL lamports for PnL parity.
   let sawWsolBalanceChange = false
   for (const acc of accountData) {
-    if (acc?.account !== wallet) continue
     const changes = Array.isArray((acc as any)?.tokenBalanceChanges) ? (acc as any).tokenBalanceChanges : []
     for (const tc of changes) {
       const mint = tc?.mint
       if (mint !== WSOL_MINT) continue
+      const belongsToWallet = tc?.userAccount === wallet || acc?.account === wallet
+      if (!belongsToWallet) continue
       // rawTokenAmount.tokenAmount is base units (lamports) for WSOL.
       const amtBase = toNumber(tc?.rawTokenAmount?.tokenAmount)
       if (amtBase !== 0) {
