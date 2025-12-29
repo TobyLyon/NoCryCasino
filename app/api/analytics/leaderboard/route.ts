@@ -61,25 +61,34 @@ type TradeLeg = {
 }
 
 function computeTradeSolChangeLamports(raw: any, wallet: string, solPriceUsd: number): number {
-  let net = 0
-  let sawSwapNative = false
+  let netStrict = 0
+  let sawSwapNativeStrict = false
+
+  let netRelaxed = 0
+  let sawSwapNativeRelaxed = false
 
   const walkSwap = (s: any) => {
     if (!s) return
     const ni = s?.nativeInput
     const no = s?.nativeOutput
-    if (ni?.account === wallet) {
-      const v = Number(ni?.amount)
-      if (Number.isFinite(v) && v !== 0) {
-        net -= v
-        sawSwapNative = true
+
+    const inAmt = Number(ni?.amount)
+    if (Number.isFinite(inAmt) && inAmt !== 0) {
+      netRelaxed -= inAmt
+      sawSwapNativeRelaxed = true
+      if (ni?.account === wallet) {
+        netStrict -= inAmt
+        sawSwapNativeStrict = true
       }
     }
-    if (no?.account === wallet) {
-      const v = Number(no?.amount)
-      if (Number.isFinite(v) && v !== 0) {
-        net += v
-        sawSwapNative = true
+
+    const outAmt = Number(no?.amount)
+    if (Number.isFinite(outAmt) && outAmt !== 0) {
+      netRelaxed += outAmt
+      sawSwapNativeRelaxed = true
+      if (no?.account === wallet) {
+        netStrict += outAmt
+        sawSwapNativeStrict = true
       }
     }
     const inner = s?.innerSwaps
@@ -89,7 +98,10 @@ function computeTradeSolChangeLamports(raw: any, wallet: string, solPriceUsd: nu
   }
 
   walkSwap(raw?.events?.swap)
-  if (sawSwapNative && net !== 0) return net
+  if (sawSwapNativeStrict && netStrict !== 0) return netStrict
+
+  const source = typeof raw?.source === "string" ? raw.source : ""
+  if (source === "JUPITER" && sawSwapNativeRelaxed && netRelaxed !== 0) return netRelaxed
 
   const wsolDeltaSol = computeTokenTransfers(raw, wallet)
     .filter((t) => t.mint === WSOL_MINT)
