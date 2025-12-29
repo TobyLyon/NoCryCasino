@@ -393,7 +393,7 @@ export async function GET(request: NextRequest) {
             if (ageDays < 7) is_eligible = false
           }
 
-          const selfTransferCount = pnls.filter((p) => p.is_self_transfer).length
+          const selfTransferCount = 0
           if (agg.tx_count > 0 && selfTransferCount / agg.tx_count > 0.1) {
             is_eligible = false
           }
