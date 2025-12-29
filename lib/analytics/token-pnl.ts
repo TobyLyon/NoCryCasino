@@ -78,6 +78,19 @@ export function computeNetSolLamports(raw: HeliusEvent, wallet: string): number 
     if (to === wallet) net += amt
   }
 
+  const swap = raw?.events?.swap
+  const walkSwap = (s: SwapEvent | undefined) => {
+    if (!s) return
+    if (s?.nativeInput?.account === wallet) net -= toNumber(s.nativeInput.amount)
+    if (s?.nativeOutput?.account === wallet) net += toNumber(s.nativeOutput.amount)
+    if (Array.isArray(s?.innerSwaps)) {
+      for (const inner of s.innerSwaps) {
+        walkSwap(inner)
+      }
+    }
+  }
+  walkSwap(swap)
+
   return net
 }
 

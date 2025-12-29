@@ -2,6 +2,10 @@ import { NextResponse, type NextRequest } from "next/server"
 import { createServiceClient } from "@/lib/supabase/service"
 import { enforceMaxBodyBytes, rateLimit, requireBearerIfConfigured } from "@/lib/api/guards"
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 function uniqStrings(values: string[]): string[] {
   const out: string[] = []
   const seen = new Set<string>()
@@ -224,6 +228,8 @@ export async function POST(request: NextRequest) {
   const auth = requireBearerIfConfigured({ request, envVarName: "ADMIN_API_KEY" })
   if (auth) return auth
 
+  const startedAt = Date.now()
+
   const body = (await request.json().catch(() => null)) as any
   const timeframesInput = Array.isArray(body?.timeframes) ? body.timeframes : null
   const timeframeRaw = typeof body?.timeframe === "string" ? body.timeframe : null
@@ -239,21 +245,48 @@ export async function POST(request: NextRequest) {
   const trackImported = body?.trackImported === true
   const fillMissingOnly = body?.fillMissingOnly !== false
 
+  const setTrackedRank = body?.setTrackedRank === true
+
+  const maxRunMs = typeof body?.maxRunMs === "number" && Number.isFinite(body.maxRunMs) && body.maxRunMs > 1000 ? Math.floor(body.maxRunMs) : 55_000
+  const pageDelayMs = typeof body?.pageDelayMs === "number" && Number.isFinite(body.pageDelayMs) && body.pageDelayMs >= 0 ? Math.floor(body.pageDelayMs) : 900
+  const accountDelayMs = typeof body?.accountDelayMs === "number" && Number.isFinite(body.accountDelayMs) && body.accountDelayMs >= 0 ? Math.floor(body.accountDelayMs) : 1200
+  const maxPages = typeof body?.maxPages === "number" && Number.isFinite(body.maxPages) && body.maxPages > 0 ? Math.floor(body.maxPages) : 12
+  const forceHtml = body?.forceHtml === true
+  const pageSizeInput = typeof body?.pageSize === "number" && Number.isFinite(body.pageSize) && body.pageSize > 0 ? Math.floor(body.pageSize) : null
+
+  const startPages = (body?.startPages && typeof body.startPages === "object") ? (body.startPages as Record<string, unknown>) : null
+  const getStartPage = (tf: "daily" | "weekly" | "monthly") => {
+    const v = startPages ? startPages[tf] : null
+    const n = typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.floor(v) : 0
+    return n
+  }
+
   const allAccounts: Array<{ wallet: string; name: string | null; twitter?: string | null; telegram?: string | null; timeframe: "daily" | "weekly" | "monthly"; rank: number }> = []
   const sources: Record<string, "api" | "html"> = {}
   const apiErrors: Record<string, string> = {}
+  const nextPages: Record<string, number> = {}
+  const stats: Record<string, { got: number; pages: number; truncated: boolean }> = {}
 
   for (const tf of timeframes) {
     const tfParam = tf === "daily" ? 1 : tf === "weekly" ? 7 : 30
 
     // Prefer the internal JSON API (supports pagination and includes socials).
     // Fallback to HTML parsing if the API fails.
-    const pageSize = Math.min(50, Math.max(1, limit))
+    const pageSize = Math.min(50, Math.max(1, pageSizeInput ?? limit))
     let got = 0
-    let page = 0
+    let pages = 0
+    const startPage = getStartPage(tf)
+    let page = startPage
+    let truncated = false
 
     try {
-      while (got < limit && page < 50) {
+      if (forceHtml) throw new Error("forceHtml")
+      while (got < limit && pages < maxPages) {
+        if (Date.now() - startedAt > maxRunMs) {
+          truncated = true
+          break
+        }
+
         const rows = await fetchLeaderboardApi({ timeframe: tfParam as 1 | 7 | 30, page, pageSize })
         if (!rows || rows.length === 0) break
 
@@ -269,20 +302,27 @@ export async function POST(request: NextRequest) {
         }
 
         page += 1
+        pages += 1
+        if (pageDelayMs > 0) await sleep(pageDelayMs)
       }
       sources[tf] = "api"
     } catch (e: any) {
       sources[tf] = "html"
       apiErrors[tf] = e?.message ?? String(e)
-      const leaderboardUrl = `https://kolscan.io/leaderboard?timeframe=${tfParam}`
-      const leaderboardHtml = await fetchText(leaderboardUrl)
-      const accounts = extractKolscanAccounts(leaderboardHtml).slice(0, limit)
+      if (!truncated) {
+        const leaderboardUrl = `https://kolscan.io/leaderboard?timeframe=${tfParam}`
+        const leaderboardHtml = await fetchText(leaderboardUrl)
+        const accounts = extractKolscanAccounts(leaderboardHtml).slice(0, limit)
 
-      for (let i = 0; i < accounts.length; i += 1) {
-        const a = accounts[i]!
-        allAccounts.push({ wallet: a.wallet, name: a.name, timeframe: tf, rank: i + 1 })
+        for (let i = 0; i < accounts.length; i += 1) {
+          const a = accounts[i]!
+          allAccounts.push({ wallet: a.wallet, name: a.name, timeframe: tf, rank: i + 1 })
+        }
       }
     }
+
+    nextPages[tf] = page
+    stats[tf] = { got, pages, truncated }
   }
 
   // Deduplicate wallets across timeframes (keep first occurrence)
@@ -297,22 +337,28 @@ export async function POST(request: NextRequest) {
 
   const supabase = createServiceClient()
 
-  const { data: existingKols } = await supabase
-    .from("kols")
-    .select("wallet_address, display_name, avatar_url")
-    .in("wallet_address", wallets)
-    .limit(1000)
+  const existingRows: any[] = []
+  for (let i = 0; i < wallets.length; i += 900) {
+    const chunk = wallets.slice(i, i + 900)
+    const { data } = await supabase
+      .from("kols")
+      .select("wallet_address, display_name, avatar_url")
+      .in("wallet_address", chunk)
+      .limit(1000)
+    if (Array.isArray(data)) existingRows.push(...data)
+  }
 
   const existingByWallet = new Map(
-    (existingKols ?? []).map((k: any) => [String(k.wallet_address), { display_name: k.display_name ?? null, avatar_url: k.avatar_url ?? null }]),
+    existingRows.map((k: any) => [String(k.wallet_address), { display_name: k.display_name ?? null, avatar_url: k.avatar_url ?? null }]),
   )
 
   const rows: any[] = []
 
-  const shouldSetTrackedRank = trackImported && timeframes.length === 1
+  const shouldSetTrackedRank = setTrackedRank && timeframes.length === 1
   const tfParamForEnrich = (tf: "daily" | "weekly" | "monthly") => (tf === "daily" ? 1 : tf === "weekly" ? 7 : 30)
 
   for (let i = 0; i < deduped.length; i += 1) {
+    if (Date.now() - startedAt > maxRunMs) break
     const a = deduped[i]!
 
     const existing = existingByWallet.get(a.wallet) ?? { display_name: null, avatar_url: null }
@@ -340,6 +386,8 @@ export async function POST(request: NextRequest) {
           ;(a as any).__avatar_url = profile.avatar_url
         }
       }
+
+      if (accountDelayMs > 0) await sleep(accountDelayMs)
     }
 
     const row: any = {
@@ -371,6 +419,8 @@ export async function POST(request: NextRequest) {
     timeframes,
     sources,
     apiErrors: Object.keys(apiErrors).length > 0 ? apiErrors : undefined,
+    nextPages,
+    stats,
     imported: rows.length,
     uniqueWallets: wallets.length,
     enrich,

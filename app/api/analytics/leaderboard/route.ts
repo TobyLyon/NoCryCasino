@@ -172,6 +172,21 @@ export async function GET(request: NextRequest) {
     const timeframe: TimeFrame =
       timeframeRaw === "weekly" ? "weekly" : timeframeRaw === "monthly" ? "monthly" : "daily"
 
+    const debug = url.searchParams.get("debug") === "1" || url.searchParams.get("debug") === "true"
+    const applyEligibility = !(url.searchParams.get("eligibility") === "0" || url.searchParams.get("eligibility") === "false")
+    const kolLimit = Math.min(
+      5000,
+      Math.max(50, Number.isFinite(Number(url.searchParams.get("kolLimit"))) ? Number(url.searchParams.get("kolLimit")) : 2000),
+    )
+    const pageSize = Math.min(
+      10_000,
+      Math.max(500, Number.isFinite(Number(url.searchParams.get("pageSize"))) ? Number(url.searchParams.get("pageSize")) : 5000),
+    )
+    const maxLinks = Math.min(
+      600_000,
+      Math.max(10_000, Number.isFinite(Number(url.searchParams.get("maxLinks"))) ? Number(url.searchParams.get("maxLinks")) : 200_000),
+    )
+
     const cutoffIso = timeframeToCutoffIso(timeframe)
 
     const supabase = createServiceClient()
@@ -184,7 +199,7 @@ export async function GET(request: NextRequest) {
         .eq("is_tracked", true)
         .order("tracked_rank", { ascending: true, nullsFirst: false })
         .order("updated_at", { ascending: false })
-        .limit(500),
+        .limit(kolLimit),
       getSolPriceUsd(),
     ])
 
@@ -196,45 +211,55 @@ export async function GET(request: NextRequest) {
     const trackedSet = new Set(tracked.map((k) => k.wallet_address))
     const kolMap = new Map(tracked.map((k) => [k.wallet_address, k]))
 
-    const { data: events, error: eventsError } = await supabase
-      .from("tx_events")
-      .select("signature, block_time, raw, tx_event_wallets(wallet_address)")
-      .gte("block_time", cutoffIso)
-      .order("block_time", { ascending: false })
-      .limit(10000)
+    const links = [] as Array<{ wallet_address: string; signature: string; tx_events: { block_time: string | null; raw: any } }>
+    for (let offset = 0; offset < maxLinks; offset += pageSize) {
+      const { data, error } = await supabase
+        .from("tx_event_wallets")
+        .select("wallet_address, signature, tx_events!inner(block_time, raw), kols!inner(is_active, is_tracked)")
+        .eq("kols.is_active", true)
+        .eq("kols.is_tracked", true)
+        .gte("tx_events.block_time", cutoffIso)
+        .order("block_time", { foreignTable: "tx_events", ascending: false })
+        .range(offset, offset + pageSize - 1)
 
-    if (eventsError) {
-      return NextResponse.json({ error: eventsError.message }, { status: 500 })
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 })
+      }
+
+      const rows = (data ?? []) as any[]
+      if (rows.length === 0) break
+      for (const r of rows) {
+        const wallet_address = String(r?.wallet_address ?? "")
+        const signature = String(r?.signature ?? "")
+        if (!wallet_address || !signature) continue
+        links.push({ wallet_address, signature, tx_events: r.tx_events })
+      }
+
+      if (rows.length < pageSize) break
     }
 
     // Use new token PnL analytics
     const walletPnLs = new Map<string, WalletPnL[]>()
     const seenSigs = new Map<string, Set<string>>()
 
-    for (const evt of (events ?? []) as any[]) {
-      const raw = evt?.raw
-      const links = Array.isArray(evt?.tx_event_wallets) ? evt.tx_event_wallets : []
-      const sig = String(evt?.signature ?? "")
+    for (const l of links) {
+      const wallet = l.wallet_address
+      if (!trackedSet.has(wallet)) continue
+      const sig = l.signature
 
-      for (const l of links) {
-        const wallet = l?.wallet_address
-        if (typeof wallet !== "string" || !trackedSet.has(wallet)) continue
-
-        // Dedupe by signature per wallet
-        let seen = seenSigs.get(wallet)
-        if (!seen) {
-          seen = new Set()
-          seenSigs.set(wallet, seen)
-        }
-        if (seen.has(sig)) continue
-        seen.add(sig)
-
-        // Analyze with full token PnL (native + token transfers + swaps)
-        const pnl = analyzeWalletPnL(raw, wallet)
-        const arr = walletPnLs.get(wallet) ?? []
-        arr.push(pnl)
-        walletPnLs.set(wallet, arr)
+      let seen = seenSigs.get(wallet)
+      if (!seen) {
+        seen = new Set()
+        seenSigs.set(wallet, seen)
       }
+      if (seen.has(sig)) continue
+      seen.add(sig)
+
+      const raw = l?.tx_events?.raw
+      const pnl = analyzeWalletPnL(raw, wallet)
+      const arr = walletPnLs.get(wallet) ?? []
+      arr.push(pnl)
+      walletPnLs.set(wallet, arr)
     }
 
     const rows: LeaderboardRow[] = tracked
@@ -245,17 +270,18 @@ export async function GET(request: NextRequest) {
 
         // Basic eligibility check (wallet age)
         let is_eligible = true
-        if (k.wallet_created_at) {
-          const created = new Date(k.wallet_created_at)
-          const now = new Date()
-          const ageDays = Math.floor((now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24))
-          if (ageDays < 7) is_eligible = false
-        }
+        if (applyEligibility) {
+          if (k.wallet_created_at) {
+            const created = new Date(k.wallet_created_at)
+            const now = new Date()
+            const ageDays = Math.floor((now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24))
+            if (ageDays < 7) is_eligible = false
+          }
 
-        // Self-transfer ratio check
-        const selfTransferCount = pnls.filter((p) => p.is_self_transfer).length
-        if (agg.tx_count > 0 && selfTransferCount / agg.tx_count > 0.1) {
-          is_eligible = false
+          const selfTransferCount = pnls.filter((p) => p.is_self_transfer).length
+          if (agg.tx_count > 0 && selfTransferCount / agg.tx_count > 0.1) {
+            is_eligible = false
+          }
         }
 
         return {
@@ -283,6 +309,24 @@ export async function GET(request: NextRequest) {
         return b.profit_sol - a.profit_sol
       })
       .map((r, idx) => ({ ...r, rank: idx + 1 }))
+
+    if (debug) {
+      const walletsWithEvents = Array.from(walletPnLs.keys()).length
+      return NextResponse.json({
+        ok: true,
+        timeframe,
+        solPriceUsd,
+        cutoffIso,
+        trackedWallets: tracked.length,
+        linkRows: links.length,
+        walletsWithEvents,
+        eligibility: applyEligibility,
+        kolLimit,
+        pageSize,
+        maxLinks,
+        rows,
+      })
+    }
 
     return NextResponse.json({ ok: true, timeframe, solPriceUsd, rows })
   } catch (e: any) {
