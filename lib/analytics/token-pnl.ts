@@ -92,8 +92,6 @@ export function computeNetSolLamports(raw: HeliusEvent, wallet: string): number 
     net += nativeDelta
   }
 
-  // WSOL (wrapped SOL) changes are not reflected in nativeBalanceChange.
-  // We treat WSOL deltas as SOL lamports for PnL parity.
   let sawWsolBalanceChange = false
   let wsolDeltaLamports = 0
   for (const acc of accountData) {
@@ -103,7 +101,6 @@ export function computeNetSolLamports(raw: HeliusEvent, wallet: string): number 
       if (mint !== WSOL_MINT) continue
       const belongsToWallet = tc?.userAccount === wallet || acc?.account === wallet
       if (!belongsToWallet) continue
-      // rawTokenAmount.tokenAmount is base units (lamports) for WSOL.
       const amtBase = toNumber(tc?.rawTokenAmount?.tokenAmount)
       if (amtBase !== 0) {
         net += amtBase
@@ -113,12 +110,8 @@ export function computeNetSolLamports(raw: HeliusEvent, wallet: string): number 
     }
   }
 
-  // If a tx uses WSOL, treat WSOL deltas as the primary SOL-equivalent movement.
-  // Only add nativeBalanceChange when it looks fee-like (small), otherwise it often represents
-  // unrelated movements and can cause double counting.
   if (usedNativeBalanceChange) {
     if (!sawWsolBalanceChange) {
-      // Fallback: some payloads include tokenTransfers but not tokenBalanceChanges.
       const tokenTransfers = Array.isArray(raw?.tokenTransfers) ? raw.tokenTransfers : []
       for (const t of tokenTransfers) {
         if (t?.mint !== WSOL_MINT) continue
@@ -135,7 +128,6 @@ export function computeNetSolLamports(raw: HeliusEvent, wallet: string): number 
       return feeLike ? wsolDeltaLamports + nativeDelta : wsolDeltaLamports
     }
 
-    // No WSOL movement; use nativeBalanceChange.
     return nativeDelta
   }
 

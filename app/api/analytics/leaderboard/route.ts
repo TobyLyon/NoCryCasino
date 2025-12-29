@@ -8,10 +8,9 @@ type TimeFrame = "daily" | "weekly" | "monthly"
 const WSOL_MINT = "So11111111111111111111111111111111111111112"
 
 const STABLE_MINTS = new Set([
-  // Kolscan stable list
-  "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", // USDT
-  "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // USDC
-  "USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB", // USD1
+  "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+  "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+  "USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB",
 ])
 
 const DEX_SOURCES = new Set([
@@ -39,17 +38,11 @@ type TradeLeg = {
 
 function extractTradeLeg(raw: any, wallet: string, blockTimeMs: number): TradeLeg | null {
   const sol_change_lamports = computeNetSolLamports(raw, wallet)
-
-  // Kolscan's realized PnL model is SOL-denominated; if there is no SOL movement (WSOL),
-  // it's typically not part of the SOL PnL leaderboard.
   if (!sol_change_lamports) return null
 
   const tokenDeltas = computeTokenTransfers(raw, wallet)
     .filter((t) => t.mint !== WSOL_MINT && !STABLE_MINTS.has(t.mint))
     .map((t) => ({ mint: t.mint, amt: t.net_amount }))
-
-  // Only accept txs where there is exactly one non-stable token delta for the wallet;
-  // multi-token deltas are often routed swaps and are difficult to attribute cleanly.
   if (tokenDeltas.length !== 1) return null
 
   const primary = tokenDeltas[0]
@@ -121,8 +114,6 @@ function computeRealizedTradePnL(legs: TradeLeg[]): {
     }
     byMint.set(leg.token_mint, state)
   }
-
-  // Kolscan's leaderboard shows small win/loss counts; this matches counting per-token outcomes.
   for (const p of profitByMint.values()) {
     if (p > 0) wins += 1
     if (p < 0) losses += 1
