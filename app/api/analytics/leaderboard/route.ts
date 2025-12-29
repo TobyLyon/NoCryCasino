@@ -287,6 +287,9 @@ export async function GET(request: NextRequest) {
   if (limited) return limited
 
   try {
+    const buildSha =
+      process.env.VERCEL_GIT_COMMIT_SHA || process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || process.env.COMMIT_SHA || null
+
     const url = new URL(request.url)
     const timeframeRaw = (url.searchParams.get("timeframe") || "daily").toLowerCase()
     const timeframe: TimeFrame =
@@ -445,6 +448,7 @@ export async function GET(request: NextRequest) {
       const walletsWithEvents = Array.from(walletLegs.keys()).length
       return NextResponse.json({
         ok: true,
+        buildSha,
         timeframe,
         solPriceUsd,
         cutoffIso,
@@ -459,7 +463,7 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    return NextResponse.json({ ok: true, timeframe, solPriceUsd, rows })
+    return NextResponse.json({ ok: true, buildSha, timeframe, solPriceUsd, rows })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? String(e) }, { status: 500 })
   }
