@@ -4,7 +4,7 @@ import { enforceMaxBodyBytes, rateLimit, requireBearerIfConfigured } from "@/lib
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { signature: string } },
+  context: { params: Promise<{ signature: string }> },
 ) {
   const limited = rateLimit({ request, key: "admin:tx-events:get", limit: 60, windowMs: 60_000 })
   if (limited) return limited
@@ -16,6 +16,7 @@ export async function GET(
   if (auth) return auth
 
   try {
+    const params = await context.params
     const signature = typeof params?.signature === "string" ? params.signature.trim() : ""
     if (!signature) {
       return NextResponse.json({ error: "Missing signature" }, { status: 400 })
