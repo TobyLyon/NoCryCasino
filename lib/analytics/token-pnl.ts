@@ -208,13 +208,11 @@ export function computeTokenTransfers(
       if (seenMints.has(mint)) continue
 
       const amtBase = toNumber(tc?.rawTokenAmount?.tokenAmount)
-      const decimals = toNumber(tc?.rawTokenAmount?.decimals ?? tc?.decimals)
+      const decimals = toNumber(tc?.rawTokenAmount?.decimals)
       const denom = decimals > 0 ? Math.pow(10, decimals) : 1
       const amt = denom ? amtBase / denom : 0
 
-      if (amt !== 0) {
-        byMint.set(mint, (byMint.get(mint) ?? 0) + amt)
-      }
+      byMint.set(mint, (byMint.get(mint) ?? 0) + amt)
     }
   }
 
