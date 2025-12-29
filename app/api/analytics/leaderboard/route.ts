@@ -573,6 +573,8 @@ export async function GET(request: NextRequest) {
         considered: number
         tradeLike: number
         legOk: number
+        firstNoSolDeltaSig?: string
+        firstPumpNoSolDeltaSig?: string
         dropReasons: Record<string, number>
         accepted: Array<{ signature: string; type: string; source: string }>
         dropped: Array<{
@@ -595,6 +597,8 @@ export async function GET(request: NextRequest) {
         considered: 0,
         tradeLike: 0,
         legOk: 0,
+        firstNoSolDeltaSig: undefined,
+        firstPumpNoSolDeltaSig: undefined,
         dropReasons: {},
         accepted: [],
         dropped: [],
@@ -734,6 +738,12 @@ export async function GET(request: NextRequest) {
             const reason = out.reason ?? "no_sol_delta"
             const { type, source } = sampleMeta(raw)
             dbg.dropReasons[reason] = (dbg.dropReasons[reason] ?? 0) + 1
+
+            if (reason === "no_sol_delta") {
+              if (!dbg.firstNoSolDeltaSig) dbg.firstNoSolDeltaSig = sig
+              if (/PUMP/i.test(source) && !dbg.firstPumpNoSolDeltaSig) dbg.firstPumpNoSolDeltaSig = sig
+            }
+
             pushDroppedSample(dbg, {
               signature: sig,
               reason,
