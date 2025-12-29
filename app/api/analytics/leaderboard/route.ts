@@ -568,6 +568,25 @@ export async function GET(request: NextRequest) {
       }
       return debug2Wallets[wallet]
     }
+
+    const pushDroppedSample = (
+      dbg: {
+        dropped: Array<{ signature: string; reason: DropReason; type: string; source: string }>
+      },
+      item: { signature: string; reason: DropReason; type: string; source: string },
+    ) => {
+      if (dbg.dropped.length < 10) {
+        dbg.dropped.push(item)
+        return
+      }
+
+      if (item.reason === "not_trade_like") return
+
+      const idx = dbg.dropped.findIndex((x) => x.reason === "not_trade_like")
+      if (idx >= 0) {
+        dbg.dropped[idx] = item
+      }
+    }
     const sampleMeta = (raw: any) => {
       const t = typeof raw?.type === "string" ? raw.type : ""
       const s = typeof raw?.source === "string" ? raw.source : ""
@@ -597,7 +616,7 @@ export async function GET(request: NextRequest) {
           if (dbg) {
             const { type, source } = sampleMeta(raw)
             dbg.dropReasons.not_trade_like = (dbg.dropReasons.not_trade_like ?? 0) + 1
-            if (dbg.dropped.length < 10) dbg.dropped.push({ signature: sig, reason: "not_trade_like", type, source })
+            pushDroppedSample(dbg, { signature: sig, reason: "not_trade_like", type, source })
           }
           continue
         }
@@ -610,7 +629,7 @@ export async function GET(request: NextRequest) {
             const reason = out.reason ?? "no_sol_delta"
             const { type, source } = sampleMeta(raw)
             dbg.dropReasons[reason] = (dbg.dropReasons[reason] ?? 0) + 1
-            if (dbg.dropped.length < 10) dbg.dropped.push({ signature: sig, reason, type, source })
+            pushDroppedSample(dbg, { signature: sig, reason, type, source })
             continue
           }
           dbg.legOk += 1
