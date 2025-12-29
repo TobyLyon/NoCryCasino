@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { createServiceClient } from "@/lib/supabase/service"
-import { analyzeWalletPnL, aggregateWalletPnL, type WalletPnL } from "@/lib/analytics/token-pnl"
+import { computeNetSolLamports, computeTokenTransfers } from "@/lib/analytics/token-pnl"
 import { rateLimit } from "@/lib/api/guards"
 
 type TimeFrame = "daily" | "weekly" | "monthly"
@@ -21,6 +21,105 @@ const DEX_SOURCES = new Set([
   "ALDRIN",
   "CYKURA",
 ])
+
+type TradeLeg = {
+  token_mint: string
+  side: "buy" | "sell"
+  token_amount: number
+  sol_change_lamports: number
+  block_time_ms: number
+}
+
+function extractTradeLeg(raw: any, wallet: string, blockTimeMs: number): TradeLeg | null {
+  const sol_change_lamports = computeNetSolLamports(raw, wallet)
+
+  const tokenDeltas = computeTokenTransfers(raw, wallet)
+    .filter((t) => t.mint !== WSOL_MINT)
+    .map((t) => ({ mint: t.mint, amt: t.net_amount }))
+
+  if (tokenDeltas.length === 0) return null
+
+  let primary = tokenDeltas[0]
+  for (const d of tokenDeltas) {
+    if (Math.abs(d.amt) > Math.abs(primary.amt)) primary = d
+  }
+
+  const token_amount = Math.abs(primary.amt)
+  if (!Number.isFinite(token_amount) || token_amount <= 0) return null
+
+  const side: TradeLeg["side"] = primary.amt > 0 ? "buy" : "sell"
+  return {
+    token_mint: primary.mint,
+    side,
+    token_amount,
+    sol_change_lamports,
+    block_time_ms: blockTimeMs,
+  }
+}
+
+function computeRealizedTradePnL(legs: TradeLeg[]): {
+  realized_lamports: number
+  wins: number
+  losses: number
+  tx_count: number
+  volume_lamports: number
+} {
+  const byMint = new Map<string, { qty: number; cost_lamports: number }>()
+  let realized_lamports = 0
+  let wins = 0
+  let losses = 0
+  let volume_lamports = 0
+
+  const ordered = legs.slice().sort((a, b) => a.block_time_ms - b.block_time_ms)
+  for (const leg of ordered) {
+    volume_lamports += Math.round(Math.abs(leg.sol_change_lamports))
+
+    const state = byMint.get(leg.token_mint) ?? { qty: 0, cost_lamports: 0 }
+
+    if (leg.side === "buy") {
+      const cost = leg.sol_change_lamports < 0 ? -leg.sol_change_lamports : 0
+      state.qty += leg.token_amount
+      state.cost_lamports += cost
+      byMint.set(leg.token_mint, state)
+      continue
+    }
+
+    // sell
+    if (state.qty <= 0 || state.cost_lamports <= 0) {
+      byMint.set(leg.token_mint, state)
+      continue
+    }
+
+    const proceeds = leg.sol_change_lamports > 0 ? leg.sol_change_lamports : 0
+    const soldQty = Math.min(leg.token_amount, state.qty)
+    if (soldQty <= 0) {
+      byMint.set(leg.token_mint, state)
+      continue
+    }
+
+    const costBasis = state.cost_lamports * (soldQty / state.qty)
+    const profit = proceeds - costBasis
+    realized_lamports += profit
+    if (profit > 0) wins += 1
+    if (profit < 0) losses += 1
+
+    state.qty -= soldQty
+    state.cost_lamports -= costBasis
+    if (state.qty <= 1e-18 || state.cost_lamports <= 0) {
+      state.qty = 0
+      state.cost_lamports = 0
+    }
+    byMint.set(leg.token_mint, state)
+  }
+
+  return {
+    realized_lamports,
+    wins,
+    losses,
+    tx_count: wins + losses,
+    volume_lamports,
+  }
+}
 
 function isTradeLike(raw: any, wallet: string): boolean {
   if (!raw || typeof raw !== "object") return false
@@ -252,8 +351,7 @@ export async function GET(request: NextRequest) {
       if (rows.length < pageSize) break
     }
 
-    // Use new token PnL analytics
-    const walletPnLs = new Map<string, WalletPnL[]>()
+    const walletLegs = new Map<string, TradeLeg[]>()
     const seenSigs = new Map<string, Set<string>>()
 
     for (const l of links) {
@@ -271,17 +369,19 @@ export async function GET(request: NextRequest) {
 
       const raw = l?.tx_events?.raw
       if (!isTradeLike(raw, wallet)) continue
-      const pnl = analyzeWalletPnL(raw, wallet)
-      const arr = walletPnLs.get(wallet) ?? []
-      arr.push(pnl)
-      walletPnLs.set(wallet, arr)
+      const blockTimeMs = l?.tx_events?.block_time ? new Date(l.tx_events.block_time).getTime() : Date.now()
+      const leg = extractTradeLeg(raw, wallet, blockTimeMs)
+      if (!leg) continue
+      const arr = walletLegs.get(wallet) ?? []
+      arr.push(leg)
+      walletLegs.set(wallet, arr)
     }
 
     const rows: LeaderboardRow[] = tracked
       .map((k) => {
-        const pnls = walletPnLs.get(k.wallet_address) ?? []
-        const agg = aggregateWalletPnL(pnls)
-        const profit_sol = agg.net_sol_lamports / 1e9
+        const legs = walletLegs.get(k.wallet_address) ?? []
+        const agg = computeRealizedTradePnL(legs)
+        const profit_sol = agg.realized_lamports / 1e9
 
         // Basic eligibility check (wallet age)
         let is_eligible = true
@@ -312,8 +412,8 @@ export async function GET(request: NextRequest) {
           profit_sol,
           profit_usd: profit_sol * solPriceUsd,
           tx_count: agg.tx_count,
-          swap_volume_sol: agg.swap_volume_sol,
-          unique_counterparties: agg.counterparties.size,
+          swap_volume_sol: agg.volume_lamports / 1e9,
+          unique_counterparties: 0,
           is_eligible,
         }
       })
@@ -326,7 +426,7 @@ export async function GET(request: NextRequest) {
       .map((r, idx) => ({ ...r, rank: idx + 1 }))
 
     if (debug) {
-      const walletsWithEvents = Array.from(walletPnLs.keys()).length
+      const walletsWithEvents = Array.from(walletLegs.keys()).length
       return NextResponse.json({
         ok: true,
         timeframe,

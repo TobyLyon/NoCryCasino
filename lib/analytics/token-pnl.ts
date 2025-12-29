@@ -173,6 +173,7 @@ export function computeTokenTransfers(
   wallet: string
 ): Array<{ mint: string; net_amount: number; direction: "in" | "out" }> {
   const byMint = new Map<string, number>()
+  const seenMints = new Set<string>()
 
   const transfers = Array.isArray(raw?.tokenTransfers) ? raw.tokenTransfers : []
   for (const t of transfers) {
@@ -185,21 +186,32 @@ export function computeTokenTransfers(
 
     if (from === wallet) {
       byMint.set(mint, (byMint.get(mint) ?? 0) - amt)
+      seenMints.add(mint)
     }
     if (to === wallet) {
       byMint.set(mint, (byMint.get(mint) ?? 0) + amt)
+      seenMints.add(mint)
     }
   }
 
   // Also check accountData for balance changes
   const accountData = Array.isArray(raw?.accountData) ? raw.accountData : []
   for (const acc of accountData) {
-    if (acc?.account !== wallet) continue
     const tokenChanges = Array.isArray(acc?.tokenBalanceChanges) ? acc.tokenBalanceChanges : []
     for (const tc of tokenChanges) {
       const mint = tc?.mint
-      const amt = toNumber(tc?.rawTokenAmount?.tokenAmount)
-      if (mint && amt !== 0) {
+      if (!mint) continue
+
+      const belongsToWallet = tc?.userAccount === wallet || acc?.account === wallet
+      if (!belongsToWallet) continue
+      if (seenMints.has(mint)) continue
+
+      const amtBase = toNumber(tc?.rawTokenAmount?.tokenAmount)
+      const decimals = toNumber(tc?.rawTokenAmount?.decimals ?? tc?.decimals)
+      const denom = decimals > 0 ? Math.pow(10, decimals) : 1
+      const amt = denom ? amtBase / denom : 0
+
+      if (amt !== 0) {
         byMint.set(mint, (byMint.get(mint) ?? 0) + amt)
       }
     }
