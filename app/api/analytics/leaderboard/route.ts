@@ -128,8 +128,8 @@ export async function GET(request: NextRequest) {
       Math.max(50, Number.isFinite(kolLimitNum) ? kolLimitNum : 2000),
     )
     const pageSize = Math.min(
-      10_000,
-      Math.max(500, Number.isFinite(pageSizeNum) ? pageSizeNum : 5000),
+      1000,
+      Math.max(100, Number.isFinite(pageSizeNum) ? pageSizeNum : 1000),
     )
     const maxLinks = Math.min(
       600_000,
