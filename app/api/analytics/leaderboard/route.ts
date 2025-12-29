@@ -7,6 +7,13 @@ type TimeFrame = "daily" | "weekly" | "monthly"
 
 const WSOL_MINT = "So11111111111111111111111111111111111111112"
 
+const STABLE_MINTS = new Set([
+  // Kolscan stable list
+  "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", // USDT
+  "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // USDC
+  "USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB", // USD1
+])
+
 const DEX_SOURCES = new Set([
   "PUMP_FUN",
   "PUMP_AMM",
@@ -33,16 +40,19 @@ type TradeLeg = {
 function extractTradeLeg(raw: any, wallet: string, blockTimeMs: number): TradeLeg | null {
   const sol_change_lamports = computeNetSolLamports(raw, wallet)
 
+  // Kolscan's realized PnL model is SOL-denominated; if there is no SOL movement (WSOL),
+  // it's typically not part of the SOL PnL leaderboard.
+  if (!sol_change_lamports) return null
+
   const tokenDeltas = computeTokenTransfers(raw, wallet)
-    .filter((t) => t.mint !== WSOL_MINT)
+    .filter((t) => t.mint !== WSOL_MINT && !STABLE_MINTS.has(t.mint))
     .map((t) => ({ mint: t.mint, amt: t.net_amount }))
 
-  if (tokenDeltas.length === 0) return null
+  // Only accept txs where there is exactly one non-stable token delta for the wallet;
+  // multi-token deltas are often routed swaps and are difficult to attribute cleanly.
+  if (tokenDeltas.length !== 1) return null
 
-  let primary = tokenDeltas[0]
-  for (const d of tokenDeltas) {
-    if (Math.abs(d.amt) > Math.abs(primary.amt)) primary = d
-  }
+  const primary = tokenDeltas[0]
 
   const token_amount = Math.abs(primary.amt)
   if (!Number.isFinite(token_amount) || token_amount <= 0) return null
@@ -65,6 +75,7 @@ function computeRealizedTradePnL(legs: TradeLeg[]): {
   volume_lamports: number
 } {
   const byMint = new Map<string, { qty: number; cost_lamports: number }>()
+  const profitByMint = new Map<string, number>()
   let realized_lamports = 0
   let wins = 0
   let losses = 0
@@ -100,8 +111,7 @@ function computeRealizedTradePnL(legs: TradeLeg[]): {
     const costBasis = state.cost_lamports * (soldQty / state.qty)
     const profit = proceeds - costBasis
     realized_lamports += profit
-    if (profit > 0) wins += 1
-    if (profit < 0) losses += 1
+    profitByMint.set(leg.token_mint, (profitByMint.get(leg.token_mint) ?? 0) + profit)
 
     state.qty -= soldQty
     state.cost_lamports -= costBasis
@@ -112,11 +122,17 @@ function computeRealizedTradePnL(legs: TradeLeg[]): {
     byMint.set(leg.token_mint, state)
   }
 
+  // Kolscan's leaderboard shows small win/loss counts; this matches counting per-token outcomes.
+  for (const p of profitByMint.values()) {
+    if (p > 0) wins += 1
+    if (p < 0) losses += 1
+  }
+
   return {
     realized_lamports,
     wins,
     losses,
-    tx_count: wins + losses,
+    tx_count: legs.length,
     volume_lamports,
   }
 }
