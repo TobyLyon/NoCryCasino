@@ -31,6 +31,28 @@ function formatSol(n: number) {
   return Number.isFinite(n) ? n.toFixed(2) : "0.00"
 }
 
+function pnlClass(v: number) {
+  if (!Number.isFinite(v)) return "profit-neutral"
+  if (v > 0) return "profit-green"
+  if (v < 0) return "profit-red"
+  return "profit-neutral"
+}
+
+function formatSignedSol(v: number) {
+  if (!Number.isFinite(v)) return "0.00 SOL"
+  if (v > 0) return `+${formatSol(v)} SOL`
+  if (v < 0) return `-${formatSol(Math.abs(v))} SOL`
+  return `${formatSol(0)} SOL`
+}
+
+function formatSignedUsd(v: number, args: Intl.NumberFormatOptions) {
+  if (!Number.isFinite(v)) return "$0.00"
+  const sign = v > 0 ? "+" : v < 0 ? "-" : ""
+  const abs = Math.abs(v)
+  const formatted = abs.toLocaleString("en-US", args)
+  return `${sign}$${formatted}`
+}
+
 function Avatar({ src, alt, size, className }: { src: string | null; alt: string; size: number; className?: string }) {
   const [failed, setFailed] = useState(false)
 
@@ -318,8 +340,10 @@ export function KolLeaderboard() {
                     </div>
 
                     <div className="text-right">
-                      <div className="font-semibold profit-green">+{formatSol(kol.profit)} Sol</div>
-                      <div className="text-sm profit-green">(${kol.profitUsd.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 })})</div>
+                      <div className={`font-semibold ${pnlClass(kol.profit)}`}>{formatSignedSol(kol.profit)}</div>
+                      <div className={`text-sm ${pnlClass(kol.profitUsd)}`}>
+                        ({formatSignedUsd(kol.profitUsd, { minimumFractionDigits: 1, maximumFractionDigits: 1 })})
+                      </div>
                     </div>
                   </div>
                 ))
@@ -367,9 +391,9 @@ export function KolLeaderboard() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="rounded-lg border border-[#2a2b2b] bg-[#191a1a] p-4">
                     <div className="text-sm text-[#9a9b95] mb-1">Total Profit</div>
-                    <div className="text-2xl font-bold profit-green">+{formatSol(selectedKOL.profit)} SOL</div>
-                    <div className="text-sm profit-green">
-                      ${selectedKOL.profitUsd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    <div className={`text-2xl font-bold ${pnlClass(selectedKOL.profit)}`}>{formatSignedSol(selectedKOL.profit)}</div>
+                    <div className={`text-sm ${pnlClass(selectedKOL.profitUsd)}`}>
+                      ({formatSignedUsd(selectedKOL.profitUsd, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                     </div>
                   </div>
 
@@ -394,12 +418,16 @@ export function KolLeaderboard() {
 
                   <div className="rounded-lg border border-[#2a2b2b] bg-[#191a1a] p-4">
                     <div className="text-sm text-[#9a9b95] mb-1">Avg Profit/Trade</div>
-                    <div className="text-2xl font-bold profit-green">
-                      {selectedKOL.wins + selectedKOL.losses > 0
-                        ? (selectedKOL.profit / (selectedKOL.wins + selectedKOL.losses)).toFixed(2)
-                        : "0.00"}
-                      {" "}
-                      SOL
+                    <div
+                      className={`text-2xl font-bold ${pnlClass(
+                        selectedKOL.wins + selectedKOL.losses > 0 ? selectedKOL.profit / (selectedKOL.wins + selectedKOL.losses) : 0,
+                      )}`}
+                    >
+                      {(() => {
+                        const trades = selectedKOL.wins + selectedKOL.losses
+                        const avg = trades > 0 ? selectedKOL.profit / trades : 0
+                        return formatSignedSol(avg)
+                      })()}
                     </div>
                     <div className="text-sm text-[#9a9b95]">Per trade</div>
                   </div>

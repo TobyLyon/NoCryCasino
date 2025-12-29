@@ -133,6 +133,14 @@
    color: #2eae5b;
  }
 
+ .profit-neutral {
+   color: #ffffff;
+ }
+
+ .profit-red {
+   color: #d87373;
+ }
+
  @keyframes ncc-marquee {
    0% {
      transform: translateX(0);
