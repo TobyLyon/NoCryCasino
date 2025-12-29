@@ -563,7 +563,18 @@ export async function GET(request: NextRequest) {
         legOk: number
         dropReasons: Record<string, number>
         accepted: Array<{ signature: string; type: string; source: string }>
-        dropped: Array<{ signature: string; reason: DropReason; type: string; source: string }>
+        dropped: Array<{
+          signature: string
+          reason: DropReason
+          type: string
+          source: string
+          swapPreview?: {
+            nativeInput?: { account: string; amount: string }
+            nativeOutput?: { account: string; amount: string }
+            tokenInputs?: string[]
+            tokenOutputs?: string[]
+          }
+        }>
       }
     > = {}
     const ensureDebugWallet = (wallet: string) => {
@@ -581,9 +592,31 @@ export async function GET(request: NextRequest) {
 
     const pushDroppedSample = (
       dbg: {
-        dropped: Array<{ signature: string; reason: DropReason; type: string; source: string }>
+        dropped: Array<{
+          signature: string
+          reason: DropReason
+          type: string
+          source: string
+          swapPreview?: {
+            nativeInput?: { account: string; amount: string }
+            nativeOutput?: { account: string; amount: string }
+            tokenInputs?: string[]
+            tokenOutputs?: string[]
+          }
+        }>
       },
-      item: { signature: string; reason: DropReason; type: string; source: string },
+      item: {
+        signature: string
+        reason: DropReason
+        type: string
+        source: string
+        swapPreview?: {
+          nativeInput?: { account: string; amount: string }
+          nativeOutput?: { account: string; amount: string }
+          tokenInputs?: string[]
+          tokenOutputs?: string[]
+        }
+      },
     ) => {
       if (dbg.dropped.length < 10) {
         dbg.dropped.push(item)
@@ -595,6 +628,36 @@ export async function GET(request: NextRequest) {
       const idx = dbg.dropped.findIndex((x) => x.reason === "not_trade_like")
       if (idx >= 0) {
         dbg.dropped[idx] = item
+      }
+    }
+    const swapPreview = (raw: any) => {
+      const s = raw?.events?.swap
+      if (!s) return undefined
+      const tokenInputs = Array.isArray(s?.tokenInputs)
+        ? s.tokenInputs
+            .map((x: any) => String(x?.mint ?? ""))
+            .filter((m: string) => m.length > 0)
+            .slice(0, 4)
+        : []
+      const tokenOutputs = Array.isArray(s?.tokenOutputs)
+        ? s.tokenOutputs
+            .map((x: any) => String(x?.mint ?? ""))
+            .filter((m: string) => m.length > 0)
+            .slice(0, 4)
+        : []
+      const ni = s?.nativeInput
+      const no = s?.nativeOutput
+      return {
+        nativeInput:
+          ni && typeof ni?.account === "string" && typeof ni?.amount === "string"
+            ? { account: ni.account, amount: ni.amount }
+            : undefined,
+        nativeOutput:
+          no && typeof no?.account === "string" && typeof no?.amount === "string"
+            ? { account: no.account, amount: no.amount }
+            : undefined,
+        tokenInputs: tokenInputs.length > 0 ? tokenInputs : undefined,
+        tokenOutputs: tokenOutputs.length > 0 ? tokenOutputs : undefined,
       }
     }
     const sampleMeta = (raw: any) => {
@@ -639,7 +702,13 @@ export async function GET(request: NextRequest) {
             const reason = out.reason ?? "no_sol_delta"
             const { type, source } = sampleMeta(raw)
             dbg.dropReasons[reason] = (dbg.dropReasons[reason] ?? 0) + 1
-            pushDroppedSample(dbg, { signature: sig, reason, type, source })
+            pushDroppedSample(dbg, {
+              signature: sig,
+              reason,
+              type,
+              source,
+              swapPreview: reason === "no_sol_delta" ? swapPreview(raw) : undefined,
+            })
             continue
           }
           dbg.legOk += 1
