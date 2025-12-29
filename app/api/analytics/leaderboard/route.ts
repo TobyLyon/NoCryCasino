@@ -15,6 +15,20 @@ function getCacheTtlMs(timeframe: TimeFrame): number {
 
 type TimeFrame = "daily" | "weekly" | "monthly"
 
+type DropReason =
+  | "not_trade_like"
+  | "no_sol_delta"
+  | "no_nonstable_token_delta"
+  | "invalid_token_amount"
+
+const DEBUG_TARGET_WALLETS = {
+  Pain: "J6TDXvarvpBdPXTaTU8eJbtso1PUCYKGkVtMKUUY8iEa",
+  Casino: "8rvAsDKeAcEjEkiZMug9k8v1y8mW6gQQiMobd89Uy7qR",
+  Robo: "4ZdCpHJrSn4E9GmfP8jjfsAExHGja2TEn4JmXfEeNtyT",
+  Jijo: "4BdKaxN8G6ka4GYtQQWk4G4dZRUTX2vQH9GcXdBREFUk",
+  clukz: "G6fUXjMKPJzCY1rveAE6Qm7wy5U3vZgKDJmN1VPAdiZC",
+} as const
+
 const WSOL_MINT = "So11111111111111111111111111111111111111112"
 
 const STABLE_MINTS = new Set([
@@ -46,8 +60,48 @@ type TradeLeg = {
   block_time_ms: number
 }
 
+function computeTradeSolChangeLamports(raw: any, wallet: string): number {
+  let net = 0
+  let sawSwapNative = false
+
+  const walkSwap = (s: any) => {
+    if (!s) return
+    const ni = s?.nativeInput
+    const no = s?.nativeOutput
+    if (ni?.account === wallet) {
+      const v = Number(ni?.amount)
+      if (Number.isFinite(v) && v !== 0) {
+        net -= v
+        sawSwapNative = true
+      }
+    }
+    if (no?.account === wallet) {
+      const v = Number(no?.amount)
+      if (Number.isFinite(v) && v !== 0) {
+        net += v
+        sawSwapNative = true
+      }
+    }
+    const inner = s?.innerSwaps
+    if (Array.isArray(inner)) {
+      for (const x of inner) walkSwap(x)
+    }
+  }
+
+  walkSwap(raw?.events?.swap)
+  if (sawSwapNative && net !== 0) return net
+
+  const wsolDeltaSol = computeTokenTransfers(raw, wallet)
+    .filter((t) => t.mint === WSOL_MINT)
+    .reduce((sum, t) => sum + t.net_amount, 0)
+  const wsolDeltaLamports = Math.round(wsolDeltaSol * 1e9)
+  if (wsolDeltaLamports !== 0) return wsolDeltaLamports
+
+  return computeNetSolLamports(raw, wallet)
+}
+
 function extractTradeLeg(raw: any, wallet: string, blockTimeMs: number): TradeLeg | null {
-  const sol_change_lamports = computeNetSolLamports(raw, wallet)
+  const sol_change_lamports = computeTradeSolChangeLamports(raw, wallet)
   if (!sol_change_lamports) return null
 
   const tokenDeltas = computeTokenTransfers(raw, wallet)
@@ -71,6 +125,41 @@ function extractTradeLeg(raw: any, wallet: string, blockTimeMs: number): TradeLe
     token_amount,
     sol_change_lamports,
     block_time_ms: blockTimeMs,
+  }
+}
+
+function extractTradeLegWithReason(
+  raw: any,
+  wallet: string,
+  blockTimeMs: number,
+): { leg: TradeLeg | null; reason: DropReason | null } {
+  const sol_change_lamports = computeTradeSolChangeLamports(raw, wallet)
+  if (!sol_change_lamports) return { leg: null, reason: "no_sol_delta" }
+
+  const tokenDeltas = computeTokenTransfers(raw, wallet)
+    .filter((t) => t.mint !== WSOL_MINT && !STABLE_MINTS.has(t.mint))
+    .map((t) => ({ mint: t.mint, amt: t.net_amount }))
+
+  if (tokenDeltas.length === 0) return { leg: null, reason: "no_nonstable_token_delta" }
+
+  let primary = tokenDeltas[0]
+  for (const d of tokenDeltas) {
+    if (Math.abs(d.amt) > Math.abs(primary.amt)) primary = d
+  }
+
+  const token_amount = Math.abs(primary.amt)
+  if (!Number.isFinite(token_amount) || token_amount <= 0) return { leg: null, reason: "invalid_token_amount" }
+
+  const side: TradeLeg["side"] = primary.amt > 0 ? "buy" : "sell"
+  return {
+    leg: {
+      token_mint: primary.mint,
+      side,
+      token_amount,
+      sol_change_lamports,
+      block_time_ms: blockTimeMs,
+    },
+    reason: null,
   }
 }
 
@@ -302,7 +391,9 @@ export async function GET(request: NextRequest) {
 
     const bypassCache = url.searchParams.get("cache") === "0" || url.searchParams.get("cache") === "false"
 
-    const debug = url.searchParams.get("debug") === "1" || url.searchParams.get("debug") === "true"
+    const debugRaw = (url.searchParams.get("debug") || "0").toLowerCase()
+    const debugLevel = debugRaw === "true" ? 1 : Number.parseInt(debugRaw || "0", 10) || 0
+    const debug = debugLevel > 0
     const applyEligibility = !(url.searchParams.get("eligibility") === "0" || url.searchParams.get("eligibility") === "false")
 
     const kolLimitParam = url.searchParams.get("kolLimit")
@@ -332,7 +423,7 @@ export async function GET(request: NextRequest) {
       "leaderboard",
       timeframe,
       applyEligibility ? "1" : "0",
-      debug ? "1" : "0",
+      String(debugLevel),
       String(kolLimit),
       String(pageSize),
       String(maxLinks),
@@ -453,6 +544,36 @@ export async function GET(request: NextRequest) {
     const walletLegs = new Map<string, TradeLeg[]>()
     const seenSigs = new Map<string, Set<string>>()
 
+    const targetSet = new Set<string>(Object.values(DEBUG_TARGET_WALLETS))
+    const debug2Wallets: Record<
+      string,
+      {
+        considered: number
+        tradeLike: number
+        legOk: number
+        dropReasons: Record<string, number>
+        accepted: Array<{ signature: string; type: string; source: string }>
+        dropped: Array<{ signature: string; reason: DropReason; type: string; source: string }>
+      }
+    > = {}
+    const ensureDebugWallet = (wallet: string) => {
+      if (debug2Wallets[wallet]) return debug2Wallets[wallet]
+      debug2Wallets[wallet] = {
+        considered: 0,
+        tradeLike: 0,
+        legOk: 0,
+        dropReasons: {},
+        accepted: [],
+        dropped: [],
+      }
+      return debug2Wallets[wallet]
+    }
+    const sampleMeta = (raw: any) => {
+      const t = typeof raw?.type === "string" ? raw.type : ""
+      const s = typeof raw?.source === "string" ? raw.source : ""
+      return { type: t, source: s }
+    }
+
     for (const ev of events) {
       const sig = ev.signature
       const raw = ev.raw
@@ -468,7 +589,39 @@ export async function GET(request: NextRequest) {
         if (seen.has(sig)) continue
         seen.add(sig)
 
-        if (!isTradeLike(raw, wallet)) continue
+        const wantsDebug2 = debugLevel >= 2 && targetSet.has(wallet)
+        const dbg = wantsDebug2 ? ensureDebugWallet(wallet) : null
+        if (dbg) dbg.considered += 1
+
+        if (!isTradeLike(raw, wallet)) {
+          if (dbg) {
+            const { type, source } = sampleMeta(raw)
+            dbg.dropReasons.not_trade_like = (dbg.dropReasons.not_trade_like ?? 0) + 1
+            if (dbg.dropped.length < 10) dbg.dropped.push({ signature: sig, reason: "not_trade_like", type, source })
+          }
+          continue
+        }
+
+        if (dbg) dbg.tradeLike += 1
+
+        if (debugLevel >= 2 && dbg) {
+          const out = extractTradeLegWithReason(raw, wallet, blockTimeMs)
+          if (!out.leg) {
+            const reason = out.reason ?? "no_sol_delta"
+            const { type, source } = sampleMeta(raw)
+            dbg.dropReasons[reason] = (dbg.dropReasons[reason] ?? 0) + 1
+            if (dbg.dropped.length < 10) dbg.dropped.push({ signature: sig, reason, type, source })
+            continue
+          }
+          dbg.legOk += 1
+          const { type, source } = sampleMeta(raw)
+          if (dbg.accepted.length < 10) dbg.accepted.push({ signature: sig, type, source })
+          const arr = walletLegs.get(wallet) ?? []
+          arr.push(out.leg)
+          walletLegs.set(wallet, arr)
+          continue
+        }
+
         const leg = extractTradeLeg(raw, wallet, blockTimeMs)
         if (!leg) continue
         const arr = walletLegs.get(wallet) ?? []
@@ -543,6 +696,9 @@ export async function GET(request: NextRequest) {
         pageSize,
         maxLinks,
         rows,
+        debugLevel,
+        debugTargets: debugLevel >= 2 ? DEBUG_TARGET_WALLETS : undefined,
+        debug2: debugLevel >= 2 ? debug2Wallets : undefined,
       }
       if (!bypassCache) {
         if (leaderboardCache.size > 50) leaderboardCache.clear()
