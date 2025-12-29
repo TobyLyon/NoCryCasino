@@ -60,7 +60,7 @@ type TradeLeg = {
   block_time_ms: number
 }
 
-function computeTradeSolChangeLamports(raw: any, wallet: string): number {
+function computeTradeSolChangeLamports(raw: any, wallet: string, solPriceUsd: number): number {
   let net = 0
   let sawSwapNative = false
 
@@ -97,11 +97,20 @@ function computeTradeSolChangeLamports(raw: any, wallet: string): number {
   const wsolDeltaLamports = Math.round(wsolDeltaSol * 1e9)
   if (wsolDeltaLamports !== 0) return wsolDeltaLamports
 
+  const stableDeltaUsd = computeTokenTransfers(raw, wallet)
+    .filter((t) => STABLE_MINTS.has(t.mint))
+    .reduce((sum, t) => sum + t.net_amount, 0)
+  if (stableDeltaUsd !== 0 && Number.isFinite(solPriceUsd) && solPriceUsd > 0) {
+    const solDelta = stableDeltaUsd / solPriceUsd
+    const lamports = Math.round(solDelta * 1e9)
+    if (lamports !== 0) return lamports
+  }
+
   return computeNetSolLamports(raw, wallet)
 }
 
-function extractTradeLeg(raw: any, wallet: string, blockTimeMs: number): TradeLeg | null {
-  const sol_change_lamports = computeTradeSolChangeLamports(raw, wallet)
+function extractTradeLeg(raw: any, wallet: string, blockTimeMs: number, solPriceUsd: number): TradeLeg | null {
+  const sol_change_lamports = computeTradeSolChangeLamports(raw, wallet, solPriceUsd)
   if (!sol_change_lamports) return null
 
   const tokenDeltas = computeTokenTransfers(raw, wallet)
@@ -132,8 +141,9 @@ function extractTradeLegWithReason(
   raw: any,
   wallet: string,
   blockTimeMs: number,
+  solPriceUsd: number,
 ): { leg: TradeLeg | null; reason: DropReason | null } {
-  const sol_change_lamports = computeTradeSolChangeLamports(raw, wallet)
+  const sol_change_lamports = computeTradeSolChangeLamports(raw, wallet, solPriceUsd)
   if (!sol_change_lamports) return { leg: null, reason: "no_sol_delta" }
 
   const tokenDeltas = computeTokenTransfers(raw, wallet)
@@ -624,7 +634,7 @@ export async function GET(request: NextRequest) {
         if (dbg) dbg.tradeLike += 1
 
         if (debugLevel >= 2 && dbg) {
-          const out = extractTradeLegWithReason(raw, wallet, blockTimeMs)
+          const out = extractTradeLegWithReason(raw, wallet, blockTimeMs, solPriceUsd)
           if (!out.leg) {
             const reason = out.reason ?? "no_sol_delta"
             const { type, source } = sampleMeta(raw)
@@ -641,7 +651,7 @@ export async function GET(request: NextRequest) {
           continue
         }
 
-        const leg = extractTradeLeg(raw, wallet, blockTimeMs)
+        const leg = extractTradeLeg(raw, wallet, blockTimeMs, solPriceUsd)
         if (!leg) continue
         const arr = walletLegs.get(wallet) ?? []
         arr.push(leg)
