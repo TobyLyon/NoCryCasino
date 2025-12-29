@@ -3,6 +3,16 @@ import { createServiceClient } from "@/lib/supabase/service"
 import { computeNetSolLamports, computeTokenTransfers } from "@/lib/analytics/token-pnl"
 import { rateLimit } from "@/lib/api/guards"
 
+type CacheEntry = { expiresAt: number; payload: any }
+
+const leaderboardCache = new Map<string, CacheEntry>()
+
+function getCacheTtlMs(timeframe: TimeFrame): number {
+  if (timeframe === "daily") return 15_000
+  if (timeframe === "weekly") return 30_000
+  return 60_000
+}
+
 type TimeFrame = "daily" | "weekly" | "monthly"
 
 const WSOL_MINT = "So11111111111111111111111111111111111111112"
@@ -286,6 +296,8 @@ export async function GET(request: NextRequest) {
     const timeframe: TimeFrame =
       timeframeRaw === "weekly" ? "weekly" : timeframeRaw === "monthly" ? "monthly" : "daily"
 
+    const bypassCache = url.searchParams.get("cache") === "0" || url.searchParams.get("cache") === "false"
+
     const debug = url.searchParams.get("debug") === "1" || url.searchParams.get("debug") === "true"
     const applyEligibility = !(url.searchParams.get("eligibility") === "0" || url.searchParams.get("eligibility") === "false")
 
@@ -311,6 +323,23 @@ export async function GET(request: NextRequest) {
       600_000,
       Math.max(minMaxLinks, Number.isFinite(maxLinksNum) ? maxLinksNum : defaultMaxLinks),
     )
+
+    const cacheKey = [
+      "leaderboard",
+      timeframe,
+      applyEligibility ? "1" : "0",
+      debug ? "1" : "0",
+      String(kolLimit),
+      String(pageSize),
+      String(maxLinks),
+    ].join(":")
+
+    if (!bypassCache) {
+      const hit = leaderboardCache.get(cacheKey)
+      if (hit && Date.now() < hit.expiresAt) {
+        return NextResponse.json(hit.payload)
+      }
+    }
 
     const cutoffIso = timeframeToCutoffIso(timeframe)
 
@@ -496,7 +525,7 @@ export async function GET(request: NextRequest) {
       const walletsWithEvents = Array.from(walletLegs.keys()).length
       let linkRows = 0
       for (const e of events) linkRows += e.wallets.length
-      return NextResponse.json({
+      const payload = {
         ok: true,
         buildSha,
         timeframe,
@@ -510,10 +539,20 @@ export async function GET(request: NextRequest) {
         pageSize,
         maxLinks,
         rows,
-      })
+      }
+      if (!bypassCache) {
+        if (leaderboardCache.size > 50) leaderboardCache.clear()
+        leaderboardCache.set(cacheKey, { expiresAt: Date.now() + getCacheTtlMs(timeframe), payload })
+      }
+      return NextResponse.json(payload)
     }
 
-    return NextResponse.json({ ok: true, buildSha, timeframe, solPriceUsd, rows })
+    const payload = { ok: true, buildSha, timeframe, solPriceUsd, rows }
+    if (!bypassCache) {
+      if (leaderboardCache.size > 50) leaderboardCache.clear()
+      leaderboardCache.set(cacheKey, { expiresAt: Date.now() + getCacheTtlMs(timeframe), payload })
+    }
+    return NextResponse.json(payload)
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? String(e) }, { status: 500 })
   }
