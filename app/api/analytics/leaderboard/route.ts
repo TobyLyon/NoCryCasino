@@ -303,11 +303,12 @@ export async function GET(request: NextRequest) {
     )
     const pageSize = Math.min(
       1000,
-      Math.max(100, Number.isFinite(pageSizeNum) ? pageSizeNum : 1000),
+      Math.max(100, Number.isFinite(pageSizeNum) ? pageSizeNum : 500),
     )
+    const defaultMaxLinks = timeframe === "daily" ? 50_000 : timeframe === "weekly" ? 200_000 : 400_000
     const maxLinks = Math.min(
       600_000,
-      Math.max(10_000, Number.isFinite(maxLinksNum) ? maxLinksNum : 200_000),
+      Math.max(5_000, Number.isFinite(maxLinksNum) ? maxLinksNum : defaultMaxLinks),
     )
 
     const cutoffIso = timeframeToCutoffIso(timeframe)
@@ -331,18 +332,24 @@ export async function GET(request: NextRequest) {
     }
 
     const tracked = (kols ?? []) as KolRow[]
-    const trackedSet = new Set(tracked.map((k) => k.wallet_address))
+    const trackedWallets = tracked.map((k) => k.wallet_address)
+    const trackedSet = new Set(trackedWallets)
     const kolMap = new Map(tracked.map((k) => [k.wallet_address, k]))
 
-    const links = [] as Array<{ wallet_address: string; signature: string; tx_events: { block_time: string | null; raw: any } }>
+    const events = [] as Array<{
+      signature: string
+      block_time: string | null
+      raw: any
+      wallets: string[]
+    }>
+
     for (let offset = 0; offset < maxLinks; offset += pageSize) {
       const { data, error } = await supabase
-        .from("tx_event_wallets")
-        .select("wallet_address, signature, tx_events!inner(block_time, raw), kols!inner(is_active, is_tracked)")
-        .eq("kols.is_active", true)
-        .eq("kols.is_tracked", true)
-        .gte("tx_events.block_time", cutoffIso)
-        .order("block_time", { foreignTable: "tx_events", ascending: false })
+        .from("tx_events")
+        .select("signature, block_time, raw, tx_event_wallets!inner(wallet_address)")
+        .gte("block_time", cutoffIso)
+        .in("tx_event_wallets.wallet_address", trackedWallets)
+        .order("block_time", { ascending: false })
         .range(offset, offset + pageSize - 1)
 
       if (error) {
@@ -351,11 +358,17 @@ export async function GET(request: NextRequest) {
 
       const rows = (data ?? []) as any[]
       if (rows.length === 0) break
+
       for (const r of rows) {
-        const wallet_address = String(r?.wallet_address ?? "")
         const signature = String(r?.signature ?? "")
-        if (!wallet_address || !signature) continue
-        links.push({ wallet_address, signature, tx_events: r.tx_events })
+        if (!signature) continue
+        const block_time = (r?.block_time ?? null) as string | null
+        const raw = r?.raw
+        const wallets = Array.isArray(r?.tx_event_wallets)
+          ? (r.tx_event_wallets as any[]).map((w) => String(w?.wallet_address ?? "")).filter((w) => trackedSet.has(w))
+          : []
+        if (wallets.length === 0) continue
+        events.push({ signature, block_time, raw, wallets })
       }
 
       if (rows.length < pageSize) break
@@ -364,27 +377,28 @@ export async function GET(request: NextRequest) {
     const walletLegs = new Map<string, TradeLeg[]>()
     const seenSigs = new Map<string, Set<string>>()
 
-    for (const l of links) {
-      const wallet = l.wallet_address
-      if (!trackedSet.has(wallet)) continue
-      const sig = l.signature
+    for (const ev of events) {
+      const sig = ev.signature
+      const raw = ev.raw
+      const blockTimeMs = ev.block_time ? new Date(ev.block_time).getTime() : Date.now()
+      for (const wallet of ev.wallets) {
+        if (!trackedSet.has(wallet)) continue
 
-      let seen = seenSigs.get(wallet)
-      if (!seen) {
-        seen = new Set()
-        seenSigs.set(wallet, seen)
+        let seen = seenSigs.get(wallet)
+        if (!seen) {
+          seen = new Set()
+          seenSigs.set(wallet, seen)
+        }
+        if (seen.has(sig)) continue
+        seen.add(sig)
+
+        if (!isTradeLike(raw, wallet)) continue
+        const leg = extractTradeLeg(raw, wallet, blockTimeMs)
+        if (!leg) continue
+        const arr = walletLegs.get(wallet) ?? []
+        arr.push(leg)
+        walletLegs.set(wallet, arr)
       }
-      if (seen.has(sig)) continue
-      seen.add(sig)
-
-      const raw = l?.tx_events?.raw
-      if (!isTradeLike(raw, wallet)) continue
-      const blockTimeMs = l?.tx_events?.block_time ? new Date(l.tx_events.block_time).getTime() : Date.now()
-      const leg = extractTradeLeg(raw, wallet, blockTimeMs)
-      if (!leg) continue
-      const arr = walletLegs.get(wallet) ?? []
-      arr.push(leg)
-      walletLegs.set(wallet, arr)
     }
 
     const rows: LeaderboardRow[] = tracked
@@ -437,6 +451,8 @@ export async function GET(request: NextRequest) {
 
     if (debug) {
       const walletsWithEvents = Array.from(walletLegs.keys()).length
+      let linkRows = 0
+      for (const e of events) linkRows += e.wallets.length
       return NextResponse.json({
         ok: true,
         buildSha,
@@ -444,7 +460,7 @@ export async function GET(request: NextRequest) {
         solPriceUsd,
         cutoffIso,
         trackedWallets: tracked.length,
-        linkRows: links.length,
+        linkRows,
         walletsWithEvents,
         eligibility: applyEligibility,
         kolLimit,
