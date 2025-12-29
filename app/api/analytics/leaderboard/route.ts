@@ -346,9 +346,8 @@ export async function GET(request: NextRequest) {
     for (let offset = 0; offset < maxLinks; offset += pageSize) {
       const { data, error } = await supabase
         .from("tx_events")
-        .select("signature, block_time, raw, tx_event_wallets!inner(wallet_address)")
+        .select("signature, block_time, raw, tx_event_wallets(wallet_address)")
         .gte("block_time", cutoffIso)
-        .in("tx_event_wallets.wallet_address", trackedWallets)
         .order("block_time", { ascending: false })
         .range(offset, offset + pageSize - 1)
 
@@ -365,7 +364,9 @@ export async function GET(request: NextRequest) {
         const block_time = (r?.block_time ?? null) as string | null
         const raw = r?.raw
         const wallets = Array.isArray(r?.tx_event_wallets)
-          ? (r.tx_event_wallets as any[]).map((w) => String(w?.wallet_address ?? "")).filter((w) => trackedSet.has(w))
+          ? (r.tx_event_wallets as any[])
+              .map((w) => String(w?.wallet_address ?? ""))
+              .filter((w) => trackedSet.has(w))
           : []
         if (wallets.length === 0) continue
         events.push({ signature, block_time, raw, wallets })
