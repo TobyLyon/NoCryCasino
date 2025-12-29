@@ -87,13 +87,15 @@ export function computeNetSolLamports(raw: HeliusEvent, wallet: string): number 
     .filter((n) => Number.isFinite(n) && n !== 0)
 
   const usedNativeBalanceChange = nativeBalanceChanges.length > 0
+  const nativeDelta = usedNativeBalanceChange ? nativeBalanceChanges.reduce((sum, n) => sum + n, 0) : 0
   if (usedNativeBalanceChange) {
-    net += nativeBalanceChanges.reduce((sum, n) => sum + n, 0)
+    net += nativeDelta
   }
 
   // WSOL (wrapped SOL) changes are not reflected in nativeBalanceChange.
   // We treat WSOL deltas as SOL lamports for PnL parity.
   let sawWsolBalanceChange = false
+  let wsolDeltaLamports = 0
   for (const acc of accountData) {
     const changes = Array.isArray((acc as any)?.tokenBalanceChanges) ? (acc as any).tokenBalanceChanges : []
     for (const tc of changes) {
@@ -105,29 +107,36 @@ export function computeNetSolLamports(raw: HeliusEvent, wallet: string): number 
       const amtBase = toNumber(tc?.rawTokenAmount?.tokenAmount)
       if (amtBase !== 0) {
         net += amtBase
+        wsolDeltaLamports += amtBase
         sawWsolBalanceChange = true
       }
     }
   }
 
-  // If we already used nativeBalanceChange, don't also process nativeTransfers/swap native fields
-  // or we will double-count native SOL deltas.
+  // If a tx uses WSOL, treat WSOL deltas as the primary SOL-equivalent movement.
+  // Only add nativeBalanceChange when it looks fee-like (small), otherwise it often represents
+  // unrelated movements and can cause double counting.
   if (usedNativeBalanceChange) {
-    // Some payloads include tokenTransfers but not tokenBalanceChanges.
-    // Only use tokenTransfers as a fallback to avoid double-counting.
     if (!sawWsolBalanceChange) {
+      // Fallback: some payloads include tokenTransfers but not tokenBalanceChanges.
       const tokenTransfers = Array.isArray(raw?.tokenTransfers) ? raw.tokenTransfers : []
       for (const t of tokenTransfers) {
         if (t?.mint !== WSOL_MINT) continue
         const amtSol = toNumber(t?.tokenAmount)
         if (!amtSol) continue
         const amtLamports = Math.round(amtSol * 1e9)
-        if (t?.fromUserAccount === wallet) net -= amtLamports
-        if (t?.toUserAccount === wallet) net += amtLamports
+        if (t?.fromUserAccount === wallet) wsolDeltaLamports -= amtLamports
+        if (t?.toUserAccount === wallet) wsolDeltaLamports += amtLamports
       }
     }
 
-    return net
+    if (wsolDeltaLamports !== 0) {
+      const feeLike = Math.abs(nativeDelta) <= Math.round(0.05 * 1e9)
+      return feeLike ? wsolDeltaLamports + nativeDelta : wsolDeltaLamports
+    }
+
+    // No WSOL movement; use nativeBalanceChange.
+    return nativeDelta
   }
 
   const native = Array.isArray(raw?.nativeTransfers) ? raw.nativeTransfers : []
