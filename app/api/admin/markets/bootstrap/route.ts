@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { createServiceClient } from "@/lib/supabase/service"
 import { enforceMaxBodyBytes, rateLimit, requireBearerIfConfigured } from "@/lib/api/guards"
+import { isEmergencyHaltActive } from "@/lib/escrow/security"
 
 type WindowKey = "daily" | "weekly" | "monthly"
 
@@ -66,6 +67,9 @@ export async function POST(request: NextRequest) {
 
   const auth = requireBearerIfConfigured({ request, envVarName: "ADMIN_API_KEY" })
   if (auth) return auth
+
+  const halted = await isEmergencyHaltActive()
+  if (halted) return NextResponse.json({ error: "Emergency halt active" }, { status: 503 })
 
   try {
     const supabase = createServiceClient()

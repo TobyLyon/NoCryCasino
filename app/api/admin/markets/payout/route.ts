@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from "next/server"
 import { createServiceClient } from "@/lib/supabase/service"
 import { withRpcFallback } from "@/lib/solana/rpc"
 import { enforceMaxBodyBytes, rateLimit, requireBearerIfConfigured } from "@/lib/api/guards"
+import { isEmergencyHaltActive } from "@/lib/escrow/security"
+import { logEscrowOperation } from "@/lib/escrow/security"
 
 type PayoutBody = {
   market_id: string
@@ -28,6 +30,8 @@ type Order = {
   deposit_signature: string | null
   payout_signature: string | null
   fee_amount_sol: number | null
+  payout_state?: string | null
+  payout_nonce?: string | null
 }
 
 type FeeConfig = {
@@ -176,6 +180,9 @@ export async function POST(request: NextRequest) {
   const auth = requireBearerIfConfigured({ request, envVarName: "ADMIN_API_KEY" })
   if (auth) return auth
 
+  const halted = await isEmergencyHaltActive()
+  if (halted) return NextResponse.json({ error: "Emergency halt active" }, { status: 503 })
+
   try {
     const body = (await request.json().catch(() => ({}))) as PayoutBody
     if (!body?.market_id) return NextResponse.json({ error: "Missing market_id" }, { status: 400 })
@@ -204,7 +211,7 @@ export async function POST(request: NextRequest) {
 
     const { data: orders, error: ordersError } = await supabase
       .from("wager_orders")
-      .select("id, wallet_address, outcome, side, deposit_amount_sol, deposit_signature, payout_signature")
+      .select("id, wallet_address, outcome, side, deposit_amount_sol, deposit_signature, payout_signature, payout_state, payout_nonce")
       .eq("market_id", m.id)
       .eq("side", "buy")
       .not("deposit_signature", "is", null)
@@ -215,7 +222,7 @@ export async function POST(request: NextRequest) {
     if (ordersError) return NextResponse.json({ error: ordersError.message }, { status: 500 })
 
     const allOrders = (orders ?? []) as unknown as Order[]
-    const eligible = allOrders.filter((o) => !o.payout_signature)
+    const eligible = allOrders.filter((o) => !o.payout_signature && o.payout_state !== "processing")
 
     const grossPot = allOrders.reduce((sum, o) => sum + Number(o.deposit_amount_sol ?? 0), 0)
     const winners = allOrders.filter((o) => o.outcome === m.resolved_outcome)
@@ -273,6 +280,8 @@ export async function POST(request: NextRequest) {
 
     for (const p of toPay) {
       try {
+        const payoutNonce = `${Date.now()}-${p.id}-${Math.random().toString(16).slice(2)}`
+
         const lamports = Math.floor(p.payout_amount_sol * 1e9)
         if (p.payout_amount_sol < min_payout) {
           results.push({ order_id: p.id, to: p.wallet_address, amount_sol: p.payout_amount_sol, error: `Below min payout (${min_payout} SOL)` })
@@ -283,7 +292,42 @@ export async function POST(request: NextRequest) {
           continue
         }
 
+        // Atomically claim this order for payout to prevent double-send on retries.
+        const { data: claimed, error: claimErr } = await supabase
+          .from("wager_orders")
+          .update({
+            payout_state: "processing",
+            payout_nonce: payoutNonce,
+            payout_processing_at: new Date().toISOString(),
+            payout_error: null,
+          })
+          .eq("id", p.id)
+          .is("payout_signature", null)
+          .or("payout_state.is.null,payout_state.neq.processing")
+          .select("id")
+          .maybeSingle()
+
+        if (claimErr) {
+          results.push({ order_id: p.id, to: p.wallet_address, amount_sol: p.payout_amount_sol, error: claimErr.message })
+          continue
+        }
+
+        if (!claimed) {
+          results.push({ order_id: p.id, to: p.wallet_address, amount_sol: p.payout_amount_sol, error: "Already processing/paid" })
+          continue
+        }
+
         const signature = await sendSol({ fromKeypair: keypair, toAddress: p.wallet_address, lamports })
+
+        await logEscrowOperation({
+          operation: "payout",
+          escrow_address: m.escrow_wallet_address,
+          market_id: m.id,
+          order_id: p.id,
+          amount_sol: p.payout_amount_sol,
+          signature,
+          to_wallet: p.wallet_address,
+        })
 
         const { error: upErr } = await supabase
           .from("wager_orders")
@@ -293,10 +337,19 @@ export async function POST(request: NextRequest) {
             fee_amount_sol: p.fee_amount_sol,
             payout_sent_at: new Date().toISOString(),
             status: "filled",
+            payout_state: "paid",
+            payout_error: null,
           })
           .eq("id", p.id)
+          .eq("payout_nonce", payoutNonce)
 
         if (upErr) {
+          // NOTE: funds may have been sent but DB update failed. Leave row in processing state for reconciliation.
+          await supabase
+            .from("wager_orders")
+            .update({ payout_error: upErr.message })
+            .eq("id", p.id)
+            .eq("payout_nonce", payoutNonce)
           results.push({ order_id: p.id, to: p.wallet_address, amount_sol: p.payout_amount_sol, signature, error: upErr.message })
           continue
         }

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { createServiceClient } from "@/lib/supabase/service"
 import { enforceMaxBodyBytes, rateLimit } from "@/lib/api/guards"
+import { isEmergencyHaltActive } from "@/lib/escrow/security"
 
 export const runtime = "nodejs"
 
@@ -159,6 +160,9 @@ export async function GET(request: NextRequest, context: { params: Promise<{ mar
 export async function POST(request: NextRequest, context: { params: Promise<{ marketId: string }> }) {
   const limited = rateLimit({ request, key: "markets:orders", limit: 120, windowMs: 60_000 })
   if (limited) return limited
+
+  const halted = await isEmergencyHaltActive()
+  if (halted) return NextResponse.json({ error: "Emergency halt active" }, { status: 503 })
 
   const tooLarge = enforceMaxBodyBytes(request, 50_000)
   if (tooLarge) return tooLarge

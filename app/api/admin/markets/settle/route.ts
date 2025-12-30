@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import { createServiceClient } from "@/lib/supabase/service"
 import { createHash } from "crypto"
 import { requireBearerIfConfigured } from "@/lib/api/guards"
+import { isEmergencyHaltActive } from "@/lib/escrow/security"
 import {
   createLeaderboardSnapshot,
   saveLeaderboardSnapshot,
@@ -102,6 +103,9 @@ function computeSettlementHash(updates: Array<{ id: string; resolved_outcome: st
 export async function POST(request: NextRequest) {
   const auth = requireBearerIfConfigured({ request, envVarName: "ADMIN_API_KEY" })
   if (auth) return auth
+
+  const halted = await isEmergencyHaltActive()
+  if (halted) return NextResponse.json({ error: "Emergency halt active" }, { status: 503 })
 
   try {
     const supabase = createServiceClient()
