@@ -80,4 +80,22 @@ describe("kolscan-pnl", () => {
 
     expect(isTradeLike(raw, wallet)).toBe(true)
   })
+
+  it("attributes SOL delta for relayed Jupiter swaps when wallet receives the non-stable token", () => {
+    const wallet = "WALLET"
+    const raw = {
+      source: "JUPITER",
+      type: "SWAP",
+      // executor does the swap, wallet just receives the token transfer
+      events: {
+        swap: {
+          nativeInput: { account: "EXECUTOR", amount: "798400000" },
+        },
+      },
+      tokenTransfers: [{ mint: "TOKEN_A", tokenAmount: 10, toUserAccount: wallet }],
+    }
+
+    const lamports = computeTradeSolChangeLamports(raw, wallet, 100)
+    expect(lamports).toBe(-798400000)
+  })
 })

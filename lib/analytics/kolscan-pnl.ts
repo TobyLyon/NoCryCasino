@@ -132,6 +132,7 @@ export function computeTradeSolChangeLamports(raw: any, wallet: string, solPrice
   const source = typeof raw?.source === "string" ? raw.source : ""
 
   const transfers = computeTokenTransfers(raw, wallet)
+  const hasNonStableToken = transfers.some((t) => t.mint !== WSOL_MINT && !STABLE_MINTS.has(t.mint) && t.net_amount !== 0)
 
   const wsolDeltaSol = transfers
     .filter((t) => t.mint === WSOL_MINT)
@@ -150,7 +151,7 @@ export function computeTradeSolChangeLamports(raw: any, wallet: string, solPrice
 
   if (netSolNoFee !== 0) return netSolNoFee
 
-  if (source === "JUPITER" && swapMentionsWallet && sawSwapNativeRelaxed && netRelaxed !== 0) return netRelaxed
+  if (source === "JUPITER" && sawSwapNativeRelaxed && netRelaxed !== 0 && (swapMentionsWallet || hasNonStableToken)) return netRelaxed
 
   if (stableDeltaUsd !== 0 && Number.isFinite(solPriceUsd) && solPriceUsd > 0) {
     const solDelta = stableDeltaUsd / solPriceUsd
