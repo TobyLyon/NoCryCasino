@@ -58,10 +58,24 @@ export async function POST(request: NextRequest) {
 
     for (const r of rows) {
       if (!dry_run) {
-        const { error: up1 } = await supabase.from("market_rounds").update({ status: "LOCKED" }).eq("round_id", r.round_id)
+        const { data: lockedRow, error: up1 } = await supabase
+          .from("market_rounds")
+          .update({ status: "LOCKED" })
+          .eq("round_id", r.round_id)
+          .eq("status", "OPEN")
+          .select("round_id")
+          .maybeSingle()
         if (up1) return NextResponse.json({ error: up1.message }, { status: 500 })
+        if (!lockedRow) {
+          results.push({ round_id: r.round_id, locked: false, skipped: true, reason: "Already locked" })
+          continue
+        }
 
-        const { error: up2 } = await supabase.from("outcome_markets").update({ status: "LOCKED" }).eq("round_id", r.round_id)
+        const { error: up2 } = await supabase
+          .from("outcome_markets")
+          .update({ status: "LOCKED" })
+          .eq("round_id", r.round_id)
+          .eq("status", "ACTIVE")
         if (up2) return NextResponse.json({ error: up2.message }, { status: 500 })
 
         const { data: expired, error: expErr } = await supabase.rpc("pm_expire_round_orders", { p_round_id: r.round_id })

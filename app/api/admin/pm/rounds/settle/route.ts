@@ -126,6 +126,32 @@ export async function POST(request: NextRequest) {
     const results: any[] = []
 
     for (const r of rows) {
+      const roundStatus = String((r as any)?.status ?? "")
+
+      if (!dry_run && roundStatus === "LOCKED") {
+        // Claim the round for settlement to reduce races (only one worker should do heavy work).
+        const { data: claimed, error: claimErr } = await supabase
+          .from("market_rounds")
+          .update({ status: "SETTLING" })
+          .eq("round_id", r.round_id)
+          .eq("status", "LOCKED")
+          .select("round_id")
+          .maybeSingle()
+
+        if (claimErr) return NextResponse.json({ error: claimErr.message }, { status: 500 })
+
+        if (!claimed) {
+          // Someone else already claimed/settled it.
+          results.push({ round_id: r.round_id, skipped: true, reason: "Already settling/settled" })
+          continue
+        }
+      }
+
+      if (!dry_run && roundStatus !== "LOCKED" && roundStatus !== "SETTLING") {
+        results.push({ round_id: r.round_id, skipped: true, reason: `Unexpected status: ${roundStatus}` })
+        continue
+      }
+
       const window_key = windowKeyForMarketType(r.market_type)
       const closes_at = new Date(String(r.lock_ts)).toISOString()
 
@@ -141,7 +167,13 @@ export async function POST(request: NextRequest) {
       const winners = eligible.slice(0, top_n).map((x) => x.wallet_address)
 
       if (!dry_run) {
-        await supabase.from("market_rounds").update({ status: "SETTLING", snapshot_hash: snapshot.snapshot_hash }).eq("round_id", r.round_id)
+        const { error: setHashErr } = await supabase
+          .from("market_rounds")
+          .update({ snapshot_hash: snapshot.snapshot_hash })
+          .eq("round_id", r.round_id)
+          .eq("status", "SETTLING")
+
+        if (setHashErr) return NextResponse.json({ error: setHashErr.message }, { status: 500 })
 
         const { data: outcomeRows, error: outErr } = await supabase
           .from("outcome_markets")
@@ -167,6 +199,7 @@ export async function POST(request: NextRequest) {
           .from("market_rounds")
           .update({ status: "SETTLED", snapshot_hash: snapshot.snapshot_hash })
           .eq("round_id", r.round_id)
+          .eq("status", "SETTLING")
 
         if (roundUpErr) return NextResponse.json({ error: roundUpErr.message }, { status: 500 })
       }
