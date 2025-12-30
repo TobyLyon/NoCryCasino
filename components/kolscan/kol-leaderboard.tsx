@@ -2,7 +2,7 @@
 
 import type React from "react"
 import Link from "next/link"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Search, Copy, Check } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
@@ -82,8 +82,11 @@ function Avatar({ src, alt, size, className }: { src: string | null; alt: string
 export function KolLeaderboard() {
   const [timeFrame, setTimeFrame] = useState<TimeFrame>("daily")
   const [searchQuery, setSearchQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
   const [copiedWallet, setCopiedWallet] = useState<string | null>(null)
   const [selectedKOL, setSelectedKOL] = useState<KOL | null>(null)
+
+  const requestSeq = useRef(0)
 
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
@@ -95,7 +98,15 @@ export function KolLeaderboard() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    let isMounted = true
+    const t = setTimeout(() => {
+      setDebouncedQuery(searchQuery)
+    }, 300)
+    return () => clearTimeout(t)
+  }, [searchQuery])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    const seq = ++requestSeq.current
 
     async function run() {
       setLoading(true)
@@ -104,17 +115,23 @@ export function KolLeaderboard() {
       const qs = new URLSearchParams()
       qs.set("timeframe", timeFrame)
       qs.set("eligibility", "0")
-      qs.set("kolLimit", "5000")
       qs.set("uiPage", String(page))
       qs.set("uiPageSize", String(pageSize))
-      if (searchQuery.trim().length > 0) qs.set("q", searchQuery.trim())
+      if (debouncedQuery.trim().length > 0) qs.set("q", debouncedQuery.trim())
 
-      const res = await fetch(`/api/analytics/leaderboard?${qs.toString()}`)
-      const json = (await res.json()) as any
+      const res = await fetch(`/api/analytics/leaderboard?${qs.toString()}`, { signal: controller.signal })
+
+      let json: any = null
+      try {
+        json = await res.json()
+      } catch {
+        json = null
+      }
 
       if (!res.ok || !json?.ok) {
-        if (!isMounted) return
-        setError(json?.error ?? "Failed to load leaderboard")
+        if (controller.signal.aborted || requestSeq.current !== seq) return
+        const msg = typeof json?.error === "string" && json.error.length > 0 ? json.error : "Failed to load leaderboard"
+        setError(`${msg} (HTTP ${res.status})`)
         setKols([])
         setTotal(0)
         setTotalPages(1)
@@ -157,7 +174,7 @@ export function KolLeaderboard() {
         }
       })
 
-      if (!isMounted) return
+      if (controller.signal.aborted || requestSeq.current !== seq) return
       setKols(mapped)
       setTotal(Number.isFinite(totalRaw) && totalRaw >= 0 ? totalRaw : mapped.length)
       setTotalPages(Number.isFinite(totalPagesRaw) && totalPagesRaw > 0 ? totalPagesRaw : 1)
@@ -165,16 +182,17 @@ export function KolLeaderboard() {
     }
 
     run().catch((e: any) => {
-      if (!isMounted) return
-      setError(e?.message ?? String(e))
+      if (controller.signal.aborted) return
+      if (requestSeq.current !== seq) return
+      setError(e?.message ? `${e.message}` : String(e))
       setKols([])
       setLoading(false)
     })
 
     return () => {
-      isMounted = false
+      controller.abort()
     }
-  }, [timeFrame, page, pageSize, searchQuery])
+  }, [timeFrame, page, pageSize, debouncedQuery])
 
   const copyToClipboard = async (wallet: string, e: React.MouseEvent) => {
     e.stopPropagation()
