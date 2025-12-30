@@ -384,7 +384,7 @@ export async function GET(request: NextRequest) {
     ])
 
     if (kolsResult.error) {
-      return NextResponse.json({ error: kolsResult.error.message }, { status: 500 })
+      return NextResponse.json({ error: kolsResult.error.message, stage: "kols" }, { status: 500 })
     }
 
     const tracked = ((kolsResult.data ?? []) as any[]) as KolRow[]
@@ -414,16 +414,25 @@ export async function GET(request: NextRequest) {
         const to = Math.min(maxLinks, processed + pageSize)
         const from = processed
 
-        const { data: linkRows, error: linkError } = await supabase
+        let linkQuery = supabase
           .from("tx_event_wallets")
-          .select("signature, wallet_address, tx_events(block_time)")
-          .in("wallet_address", trackedWallets)
+          .select(
+            "signature, wallet_address, tx_events!tx_event_wallets_signature_fkey(block_time), kols!tx_event_wallets_wallet_address_fkey!inner(is_active,is_tracked)",
+          )
+          .eq("kols.is_active", true)
+          .eq("kols.is_tracked", true)
           .gte("tx_events.block_time", cutoffIso)
           .order("block_time", { foreignTable: "tx_events", ascending: false })
           .range(from, to - 1)
 
+        if (walletsFilter && walletsFilter.length > 0) {
+          linkQuery = linkQuery.in("wallet_address", walletsFilter)
+        }
+
+        const { data: linkRows, error: linkError } = await linkQuery
+
         if (linkError) {
-          return NextResponse.json({ error: linkError.message }, { status: 500 })
+          return NextResponse.json({ error: linkError.message, stage: "tx_event_wallets" }, { status: 500 })
         }
 
         const rows = (linkRows ?? []) as any[]
@@ -466,7 +475,7 @@ export async function GET(request: NextRequest) {
           .limit(1000)
 
         if (txErr) {
-          return NextResponse.json({ error: txErr.message }, { status: 500 })
+          return NextResponse.json({ error: txErr.message, stage: "tx_events" }, { status: 500 })
         }
 
         for (const r of (txRows ?? []) as any[]) {
