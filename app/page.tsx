@@ -60,7 +60,7 @@ export default function HomePage() {
 
     const load = async () => {
       try {
-        const res = await fetch("/api/analytics/leaderboard?timeframe=daily&eligibility=0", { cache: "no-store" })
+        const res = await fetch("/api/analytics/leaderboard?timeframe=daily&eligibility=0")
         const json = (await res.json().catch(() => null)) as any
         const rows = Array.isArray(json?.rows) ? (json.rows as any[]) : []
 
@@ -82,7 +82,7 @@ export default function HomePage() {
     }
 
     void load()
-    const t = setInterval(load, 60_000)
+    const t = setInterval(load, 300_000)
 
     return () => {
       alive = false

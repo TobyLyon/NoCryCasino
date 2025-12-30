@@ -8,7 +8,7 @@ import { formatDistanceToNowStrict } from "date-fns"
 type TxEventRow = {
   signature: string
   block_time: string | null
-  raw: any
+  source: string | null
 }
 
 function timeAgo(blockTime: string | null): string {
@@ -39,7 +39,7 @@ export function RealtimeFeed() {
     async function fetchEvents() {
       const { data, error } = await supabase
         .from("tx_events")
-        .select("signature, block_time, raw")
+        .select("signature, block_time, source")
         .order("block_time", { ascending: false, nullsFirst: false })
         .limit(20)
 
@@ -50,24 +50,8 @@ export function RealtimeFeed() {
 
     fetchEvents()
 
-    const channel = supabase
-      .channel("tx-events")
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "tx_events",
-        },
-        () => {
-          fetchEvents()
-        },
-      )
-      .subscribe()
-
     return () => {
       isMounted = false
-      supabase.removeChannel(channel)
     }
   }, [])
 
@@ -82,10 +66,7 @@ export function RealtimeFeed() {
           <div className="p-6 text-sm text-muted-foreground">No transactions yet.</div>
         ) : (
           events.map((e) => {
-            const description =
-              typeof e.raw?.description === "string" && e.raw.description.length > 0
-                ? e.raw.description
-                : `${e.signature.slice(0, 8)}…${e.signature.slice(-8)}`
+            const description = `${e.signature.slice(0, 8)}…${e.signature.slice(-8)}`
 
             const ago = timeAgo(e.block_time)
 
@@ -94,6 +75,7 @@ export function RealtimeFeed() {
                 <div className="min-w-0 flex-1">
                   <div className="text-sm leading-5 text-foreground">
                     <span className="font-semibold">{description}</span>
+                    {e.source ? <span className="ml-2 text-xs text-muted-foreground">{e.source}</span> : null}
                   </div>
                 </div>
                 <div className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">{ago}</div>

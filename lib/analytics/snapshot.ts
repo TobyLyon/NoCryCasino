@@ -6,6 +6,7 @@
 import { createServiceClient } from "@/lib/supabase/service"
 import { createHash } from "crypto"
 import { analyzeWalletPnL, aggregateWalletPnL, type WalletPnL } from "./token-pnl"
+import { computeRealizedTradePnL, extractTradeLeg, isTradeLike, type TradeLeg } from "./kolscan-pnl"
 
 export type WindowKey = "daily" | "weekly" | "monthly"
 
@@ -93,12 +94,14 @@ export async function createLeaderboardSnapshot(args: {
 
   // Aggregate PnL per wallet
   const walletPnLs = new Map<string, WalletPnL[]>()
+  const walletLegs = new Map<string, TradeLeg[]>()
   const seenSigs = new Map<string, Set<string>>()
 
   for (const evt of (events ?? []) as any[]) {
     const raw = evt?.raw
     const links = Array.isArray(evt?.tx_event_wallets) ? evt.tx_event_wallets : []
     const sig = String(evt?.signature ?? "")
+    const blockTimeMs = evt?.block_time ? new Date(String(evt.block_time)).getTime() : Date.now()
 
     for (const l of links) {
       const wallet = l?.wallet_address
@@ -117,6 +120,15 @@ export async function createLeaderboardSnapshot(args: {
       const arr = walletPnLs.get(wallet) ?? []
       arr.push(pnl)
       walletPnLs.set(wallet, arr)
+
+      if (isTradeLike(raw, wallet)) {
+        const leg = extractTradeLeg(raw, wallet, blockTimeMs, sol_price_usd)
+        if (leg) {
+          const legs = walletLegs.get(wallet) ?? []
+          legs.push(leg)
+          walletLegs.set(wallet, legs)
+        }
+      }
     }
   }
 
@@ -128,7 +140,10 @@ export async function createLeaderboardSnapshot(args: {
     const agg = aggregateWalletPnL(pnls)
     const kol = kolMap.get(wallet)
 
-    const profit_sol = agg.net_sol_lamports / 1e9
+    const legs = walletLegs.get(wallet) ?? []
+    const realized = computeRealizedTradePnL(legs)
+
+    const profit_sol = realized.realized_lamports / 1e9
     const disqualification_reasons: string[] = []
 
     // Anti-manipulation checks (simplified inline for snapshot)
@@ -160,10 +175,10 @@ export async function createLeaderboardSnapshot(args: {
       rank: 0, // Will be assigned after sorting
       profit_sol,
       profit_usd: profit_sol * sol_price_usd,
-      wins: agg.wins,
-      losses: agg.losses,
-      tx_count: agg.tx_count,
-      swap_volume_sol: agg.swap_volume_sol,
+      wins: realized.wins,
+      losses: realized.losses,
+      tx_count: realized.tx_count,
+      swap_volume_sol: realized.volume_lamports / 1e9,
       unique_counterparties: agg.counterparties.size,
       is_eligible: disqualification_reasons.length === 0,
       disqualification_reasons,

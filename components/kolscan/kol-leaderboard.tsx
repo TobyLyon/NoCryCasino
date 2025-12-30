@@ -2,7 +2,7 @@
 
 import type React from "react"
 import Link from "next/link"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { Search, Copy, Check } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
@@ -85,6 +85,11 @@ export function KolLeaderboard() {
   const [copiedWallet, setCopiedWallet] = useState<string | null>(null)
   const [selectedKOL, setSelectedKOL] = useState<KOL | null>(null)
 
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
+  const [total, setTotal] = useState(0)
+  const [totalPages, setTotalPages] = useState(1)
+
   const [kols, setKols] = useState<KOL[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -96,21 +101,30 @@ export function KolLeaderboard() {
       setLoading(true)
       setError(null)
 
-      const res = await fetch(
-        `/api/analytics/leaderboard?timeframe=${encodeURIComponent(timeFrame)}&eligibility=0&kolLimit=5000`,
-        { cache: "no-store" },
-      )
+      const qs = new URLSearchParams()
+      qs.set("timeframe", timeFrame)
+      qs.set("eligibility", "0")
+      qs.set("kolLimit", "5000")
+      qs.set("uiPage", String(page))
+      qs.set("uiPageSize", String(pageSize))
+      if (searchQuery.trim().length > 0) qs.set("q", searchQuery.trim())
+
+      const res = await fetch(`/api/analytics/leaderboard?${qs.toString()}`)
       const json = (await res.json()) as any
 
       if (!res.ok || !json?.ok) {
         if (!isMounted) return
         setError(json?.error ?? "Failed to load leaderboard")
         setKols([])
+        setTotal(0)
+        setTotalPages(1)
         setLoading(false)
         return
       }
 
       const rows = Array.isArray(json?.rows) ? json.rows : []
+      const totalRaw = Number(json?.total)
+      const totalPagesRaw = Number(json?.totalPages)
       const mapped: KOL[] = rows.map((r: any) => {
         const fullWallet = String(r?.wallet_address ?? "")
         const name =
@@ -145,6 +159,8 @@ export function KolLeaderboard() {
 
       if (!isMounted) return
       setKols(mapped)
+      setTotal(Number.isFinite(totalRaw) && totalRaw >= 0 ? totalRaw : mapped.length)
+      setTotalPages(Number.isFinite(totalPagesRaw) && totalPagesRaw > 0 ? totalPagesRaw : 1)
       setLoading(false)
     }
 
@@ -158,18 +174,7 @@ export function KolLeaderboard() {
     return () => {
       isMounted = false
     }
-  }, [timeFrame])
-
-  const filteredKOLs = useMemo(() => {
-    if (!searchQuery) return kols
-    const query = searchQuery.toLowerCase()
-    return kols.filter(
-      (kol) =>
-        kol.name.toLowerCase().includes(query) ||
-        kol.wallet.toLowerCase().includes(query) ||
-        kol.fullWallet.toLowerCase().includes(query),
-    )
-  }, [kols, searchQuery])
+  }, [timeFrame, page, pageSize, searchQuery])
 
   const copyToClipboard = async (wallet: string, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -192,7 +197,10 @@ export function KolLeaderboard() {
                     type="text"
                     placeholder="Search by name or wallet address..."
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value)
+                      setPage(1)
+                    }}
                     className="h-10 w-full sm:w-[320px] rounded-lg border border-[#2a2b2b] bg-[#191a1a] pl-9 pr-3 text-sm text-white placeholder:text-[#9a9b95] outline-none"
                   />
                 </div>
@@ -200,7 +208,10 @@ export function KolLeaderboard() {
                 <div className="flex gap-2 rounded-lg border border-[#2a2b2b] p-1">
                   <button
                     type="button"
-                    onClick={() => setTimeFrame("daily")}
+                    onClick={() => {
+                      setTimeFrame("daily")
+                      setPage(1)
+                    }}
                     className={`rounded px-4 py-1.5 text-sm font-medium transition-colors ${
                       timeFrame === "daily" ? "bg-[#2a2b2b] text-white" : "text-[#d5d6d0] hover:text-white"
                     }`}
@@ -209,7 +220,10 @@ export function KolLeaderboard() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setTimeFrame("weekly")}
+                    onClick={() => {
+                      setTimeFrame("weekly")
+                      setPage(1)
+                    }}
                     className={`rounded px-4 py-1.5 text-sm font-medium transition-colors ${
                       timeFrame === "weekly" ? "bg-[#2a2b2b] text-white" : "text-[#d5d6d0] hover:text-white"
                     }`}
@@ -218,7 +232,10 @@ export function KolLeaderboard() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setTimeFrame("monthly")}
+                    onClick={() => {
+                      setTimeFrame("monthly")
+                      setPage(1)
+                    }}
                     className={`rounded px-4 py-1.5 text-sm font-medium transition-colors ${
                       timeFrame === "monthly" ? "bg-[#2a2b2b] text-white" : "text-[#d5d6d0] hover:text-white"
                     }`}
@@ -229,11 +246,55 @@ export function KolLeaderboard() {
               </div>
             </div>
 
-            {searchQuery && (
-              <div className="mb-4 text-sm text-[#9a9b95]">
-                Found {filteredKOLs.length} result{filteredKOLs.length !== 1 ? "s" : ""}
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-sm text-[#9a9b95]">
+                {searchQuery ? (
+                  <>
+                    Found {total} result{total !== 1 ? "s" : ""}
+                  </>
+                ) : (
+                  <>
+                    Showing {kols.length} of {total}
+                  </>
+                )}
               </div>
-            )}
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-[#9a9b95]">Rows</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value) || 50)
+                    setPage(1)
+                  }}
+                  className="h-9 rounded-lg border border-[#2a2b2b] bg-[#191a1a] px-2 text-sm text-white outline-none"
+                >
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={loading || page <= 1}
+                  className="h-9 rounded-lg border border-[#2a2b2b] bg-[#191a1a] px-3 text-sm text-white disabled:opacity-40"
+                >
+                  Prev
+                </button>
+                <div className="h-9 rounded-lg border border-[#2a2b2b] bg-[#191a1a] px-3 flex items-center text-sm text-white">
+                  {page} / {totalPages}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={loading || page >= totalPages}
+                  className="h-9 rounded-lg border border-[#2a2b2b] bg-[#191a1a] px-3 text-sm text-white disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
 
             <div className="space-y-3">
               {loading ? (
@@ -244,7 +305,7 @@ export function KolLeaderboard() {
                 <div className="rounded-xl border border-[#2a2b2b] bg-[#1f2020] p-8 text-center">
                   <p className="text-[#9a9b95]">Failed to load KOLs: {error}</p>
                 </div>
-              ) : kols.length === 0 && !searchQuery ? (
+              ) : total === 0 && !searchQuery ? (
                 <div className="rounded-xl border border-[#2a2b2b] bg-[#1f2020] p-8 text-center">
                   <p className="text-[#9a9b95]">No KOLs yet.</p>
                   <p className="mt-2 text-sm text-[#9a9b95]">
@@ -258,8 +319,8 @@ export function KolLeaderboard() {
                     {" "}Bearer token).
                   </p>
                 </div>
-              ) : filteredKOLs.length > 0 ? (
-                filteredKOLs.map((kol) => (
+              ) : kols.length > 0 ? (
+                kols.map((kol) => (
                   <div
                     key={kol.fullWallet}
                     onClick={() => setSelectedKOL(kol)}
@@ -353,6 +414,46 @@ export function KolLeaderboard() {
                 </div>
               )}
             </div>
+
+            {totalPages > 1 ? (
+              <div className="mt-6 flex items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPage(1)}
+                  disabled={loading || page <= 1}
+                  className="h-9 rounded-lg border border-[#2a2b2b] bg-[#191a1a] px-3 text-sm text-white disabled:opacity-40"
+                >
+                  First
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={loading || page <= 1}
+                  className="h-9 rounded-lg border border-[#2a2b2b] bg-[#191a1a] px-3 text-sm text-white disabled:opacity-40"
+                >
+                  Prev
+                </button>
+                <div className="h-9 rounded-lg border border-[#2a2b2b] bg-[#191a1a] px-3 flex items-center text-sm text-white">
+                  Page {page} of {totalPages}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={loading || page >= totalPages}
+                  className="h-9 rounded-lg border border-[#2a2b2b] bg-[#191a1a] px-3 text-sm text-white disabled:opacity-40"
+                >
+                  Next
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPage(totalPages)}
+                  disabled={loading || page >= totalPages}
+                  className="h-9 rounded-lg border border-[#2a2b2b] bg-[#191a1a] px-3 text-sm text-white disabled:opacity-40"
+                >
+                  Last
+                </button>
+              </div>
+            ) : null}
           </div>
         </div>
       </main>

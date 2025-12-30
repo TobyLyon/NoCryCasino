@@ -22,13 +22,38 @@ export async function GET(
       return NextResponse.json({ error: "Missing signature" }, { status: 400 })
     }
 
+    const url = new URL(request.url)
+    const includeRaw = (url.searchParams.get("includeRaw") || "0").toLowerCase()
+    const includeRawBool = includeRaw === "1" || includeRaw === "true"
+
     const supabase = createServiceClient()
 
-    const { data, error } = await supabase
-      .from("tx_events")
-      .select("signature, block_time, slot, source, raw")
-      .eq("signature", signature)
-      .maybeSingle()
+    const selectClause = includeRawBool
+      ? "signature, block_time, slot, source, raw"
+      : "signature, block_time, slot, source, description, raw_source, raw_type"
+
+    let data: any = null
+    let error: any = null
+
+    {
+      const r = await supabase
+        .from("tx_events")
+        .select(selectClause)
+        .eq("signature", signature)
+        .maybeSingle()
+      data = r.data
+      error = r.error
+    }
+
+    if (!includeRawBool && error && typeof error?.message === "string" && error.message.toLowerCase().includes("does not exist")) {
+      const r = await supabase
+        .from("tx_events")
+        .select("signature, block_time, slot, source")
+        .eq("signature", signature)
+        .maybeSingle()
+      data = r.data
+      error = r.error
+    }
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })

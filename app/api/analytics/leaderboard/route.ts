@@ -1,7 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { createServiceClient } from "@/lib/supabase/service"
 import { computeNetSolLamports, computeTokenTransfers } from "@/lib/analytics/token-pnl"
-import { rateLimit } from "@/lib/api/guards"
+import {
+  computeRealizedTradePnL as computeRealizedTradePnLKolscan,
+  computeTradeSolChangeLamports as computeTradeSolChangeLamportsKolscan,
+  extractTradeLeg as extractTradeLegKolscan,
+  isTradeLike as isTradeLikeKolscan,
+} from "@/lib/analytics/kolscan-pnl"
+import { rateLimit, requireBearerIfConfigured } from "@/lib/api/guards"
 
 type CacheEntry = { expiresAt: number; payload: any }
 
@@ -11,6 +17,49 @@ function getCacheTtlMs(timeframe: TimeFrame): number {
   if (timeframe === "daily") return 15_000
   if (timeframe === "weekly") return 30_000
   return 60_000
+}
+
+function cacheControlFor(timeframe: TimeFrame): string {
+  if (timeframe === "daily") return "public, max-age=0, s-maxage=60, stale-while-revalidate=300"
+  if (timeframe === "weekly") return "public, max-age=0, s-maxage=300, stale-while-revalidate=900"
+  return "public, max-age=0, s-maxage=600, stale-while-revalidate=1800"
+}
+
+function applyUiQueryAndPagination(args: {
+  payload: any
+  q: string | null
+  uiPage: number
+  uiPageSize: number
+}) {
+  const allRows = Array.isArray(args.payload?.rows) ? (args.payload.rows as any[]) : []
+  const q = typeof args.q === "string" && args.q.trim().length > 0 ? args.q.trim().toLowerCase() : null
+
+  const filtered =
+    q
+      ? allRows.filter((r) => {
+          const wallet = typeof r?.wallet_address === "string" ? r.wallet_address.toLowerCase() : ""
+          const name = typeof r?.display_name === "string" ? r.display_name.toLowerCase() : ""
+          const tw = typeof r?.twitter_handle === "string" ? r.twitter_handle.toLowerCase() : ""
+          return wallet.includes(q) || name.includes(q) || tw.includes(q)
+        })
+      : allRows
+
+  const total = filtered.length
+  const pageSize = Math.min(200, Math.max(10, Math.floor(args.uiPageSize) || 50))
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+  const page = Math.min(totalPages, Math.max(1, Math.floor(args.uiPage) || 1))
+  const start = (page - 1) * pageSize
+  const rows = filtered.slice(start, start + pageSize)
+
+  return {
+    ...args.payload,
+    rows,
+    page,
+    pageSize,
+    total,
+    totalPages,
+    q: q ?? "",
+  }
 }
 
 type TimeFrame = "daily" | "weekly" | "monthly"
@@ -60,93 +109,12 @@ type TradeLeg = {
   block_time_ms: number
 }
 
-function computeTradeSolChangeLamports(raw: any, wallet: string, solPriceUsd: number): number {
-  let netStrict = 0
-  let sawSwapNativeStrict = false
-
-  let netRelaxed = 0
-  let sawSwapNativeRelaxed = false
-
-  const walkSwap = (s: any) => {
-    if (!s) return
-    const ni = s?.nativeInput
-    const no = s?.nativeOutput
-
-    const inAmt = Number(ni?.amount)
-    if (Number.isFinite(inAmt) && inAmt !== 0) {
-      netRelaxed -= inAmt
-      sawSwapNativeRelaxed = true
-      if (ni?.account === wallet) {
-        netStrict -= inAmt
-        sawSwapNativeStrict = true
-      }
-    }
-
-    const outAmt = Number(no?.amount)
-    if (Number.isFinite(outAmt) && outAmt !== 0) {
-      netRelaxed += outAmt
-      sawSwapNativeRelaxed = true
-      if (no?.account === wallet) {
-        netStrict += outAmt
-        sawSwapNativeStrict = true
-      }
-    }
-    const inner = s?.innerSwaps
-    if (Array.isArray(inner)) {
-      for (const x of inner) walkSwap(x)
-    }
-  }
-
-  walkSwap(raw?.events?.swap)
-  if (sawSwapNativeStrict && netStrict !== 0) return netStrict
-
-  const source = typeof raw?.source === "string" ? raw.source : ""
-  if (source === "JUPITER" && sawSwapNativeRelaxed && netRelaxed !== 0) return netRelaxed
-
-  const wsolDeltaSol = computeTokenTransfers(raw, wallet)
-    .filter((t) => t.mint === WSOL_MINT)
-    .reduce((sum, t) => sum + t.net_amount, 0)
-  const wsolDeltaLamports = Math.round(wsolDeltaSol * 1e9)
-  if (wsolDeltaLamports !== 0) return wsolDeltaLamports
-
-  const stableDeltaUsd = computeTokenTransfers(raw, wallet)
-    .filter((t) => STABLE_MINTS.has(t.mint))
-    .reduce((sum, t) => sum + t.net_amount, 0)
-  if (stableDeltaUsd !== 0 && Number.isFinite(solPriceUsd) && solPriceUsd > 0) {
-    const solDelta = stableDeltaUsd / solPriceUsd
-    const lamports = Math.round(solDelta * 1e9)
-    if (lamports !== 0) return lamports
-  }
-
-  return computeNetSolLamports(raw, wallet)
+export function computeTradeSolChangeLamports(raw: any, wallet: string, solPriceUsd: number): number {
+  return computeTradeSolChangeLamportsKolscan(raw, wallet, solPriceUsd)
 }
 
-function extractTradeLeg(raw: any, wallet: string, blockTimeMs: number, solPriceUsd: number): TradeLeg | null {
-  const sol_change_lamports = computeTradeSolChangeLamports(raw, wallet, solPriceUsd)
-  if (!sol_change_lamports) return null
-
-  const tokenDeltas = computeTokenTransfers(raw, wallet)
-    .filter((t) => t.mint !== WSOL_MINT && !STABLE_MINTS.has(t.mint))
-    .map((t) => ({ mint: t.mint, amt: t.net_amount }))
-
-  if (tokenDeltas.length === 0) return null
-
-  let primary = tokenDeltas[0]
-  for (const d of tokenDeltas) {
-    if (Math.abs(d.amt) > Math.abs(primary.amt)) primary = d
-  }
-
-  const token_amount = Math.abs(primary.amt)
-  if (!Number.isFinite(token_amount) || token_amount <= 0) return null
-
-  const side: TradeLeg["side"] = primary.amt > 0 ? "buy" : "sell"
-  return {
-    token_mint: primary.mint,
-    side,
-    token_amount,
-    sol_change_lamports,
-    block_time_ms: blockTimeMs,
-  }
+export function extractTradeLeg(raw: any, wallet: string, blockTimeMs: number, solPriceUsd: number): TradeLeg | null {
+  return extractTradeLegKolscan(raw, wallet, blockTimeMs, solPriceUsd) as TradeLeg | null
 }
 
 function extractTradeLegWithReason(
@@ -185,120 +153,18 @@ function extractTradeLegWithReason(
   }
 }
 
-function computeRealizedTradePnL(legs: TradeLeg[]): {
+export function computeRealizedTradePnL(legs: TradeLeg[]): {
   realized_lamports: number
   wins: number
   losses: number
   tx_count: number
   volume_lamports: number
 } {
-  const byMint = new Map<string, { qty: number; cost_lamports: number }>()
-  const profitByMint = new Map<string, number>()
-  let realized_lamports = 0
-  let wins = 0
-  let losses = 0
-  let volume_lamports = 0
-
-  const ordered = legs.slice().sort((a, b) => a.block_time_ms - b.block_time_ms)
-  for (const leg of ordered) {
-    volume_lamports += Math.round(Math.abs(leg.sol_change_lamports))
-
-    const state = byMint.get(leg.token_mint) ?? { qty: 0, cost_lamports: 0 }
-
-    if (leg.side === "buy") {
-      const cost = leg.sol_change_lamports < 0 ? -leg.sol_change_lamports : 0
-      state.qty += leg.token_amount
-      state.cost_lamports += cost
-      byMint.set(leg.token_mint, state)
-      continue
-    }
-
-    // sell
-    if (state.qty <= 0 || state.cost_lamports <= 0) {
-      byMint.set(leg.token_mint, state)
-      continue
-    }
-
-    const proceeds = leg.sol_change_lamports > 0 ? leg.sol_change_lamports : 0
-    const soldQty = Math.min(leg.token_amount, state.qty)
-    if (soldQty <= 0) {
-      byMint.set(leg.token_mint, state)
-      continue
-    }
-
-    const costBasis = state.cost_lamports * (soldQty / state.qty)
-    const profit = proceeds - costBasis
-    realized_lamports += profit
-    profitByMint.set(leg.token_mint, (profitByMint.get(leg.token_mint) ?? 0) + profit)
-
-    state.qty -= soldQty
-    state.cost_lamports -= costBasis
-    if (state.qty <= 1e-18 || state.cost_lamports <= 0) {
-      state.qty = 0
-      state.cost_lamports = 0
-    }
-    byMint.set(leg.token_mint, state)
-  }
-  for (const p of profitByMint.values()) {
-    if (p > 0) wins += 1
-    if (p < 0) losses += 1
-  }
-
-  return {
-    realized_lamports,
-    wins,
-    losses,
-    tx_count: legs.length,
-    volume_lamports,
-  }
+  return computeRealizedTradePnLKolscan(legs as any)
 }
 
 function isTradeLike(raw: any, wallet: string): boolean {
-  if (!raw || typeof raw !== "object") return false
-  if (raw?.transactionError?.error) return false
-
-  const source = typeof raw?.source === "string" ? raw.source : ""
-  if (source === "SYSTEM_PROGRAM") return false
-
-  const t = typeof raw?.type === "string" ? raw.type : ""
-  if (t === "SWAP" || t === "SWAP_EXACT_OUT" || t === "SWAP_WITH_PRICE_IMPACT") {
-    // For SWAP types, require a DEX-ish source when provided (avoid misc system activity)
-    return source.length === 0 || source === "UNKNOWN" || DEX_SOURCES.has(source)
-  }
-
-  if (t !== "TRANSFER" && t !== "UNKNOWN") return false
-
-  // For non-swap types, only count DEX-ish sources; otherwise it's likely a funding/transfer tx.
-  if (!DEX_SOURCES.has(source)) return false
-
-  const tokenTransfers = Array.isArray(raw?.tokenTransfers) ? raw.tokenTransfers : []
-  const accountData = Array.isArray(raw?.accountData) ? raw.accountData : []
-
-  const hasWsolTransfer = tokenTransfers.some(
-    (x: any) =>
-      x?.mint === WSOL_MINT && (x?.fromUserAccount === wallet || x?.toUserAccount === wallet),
-  )
-  const hasNonWsolTransfer = tokenTransfers.some(
-    (x: any) =>
-      typeof x?.mint === "string" && x.mint.length > 0 && x.mint !== WSOL_MINT && (x?.fromUserAccount === wallet || x?.toUserAccount === wallet),
-  )
-
-  let hasWsolBalance = false
-  let hasNonWsolBalance = false
-  for (const acc of accountData) {
-    const tbc = Array.isArray(acc?.tokenBalanceChanges) ? acc.tokenBalanceChanges : []
-    for (const tc of tbc) {
-      const mint = tc?.mint
-      const belongsToWallet = tc?.userAccount === wallet || acc?.account === wallet
-      if (!belongsToWallet) continue
-      if (mint === WSOL_MINT) hasWsolBalance = true
-      if (typeof mint === "string" && mint.length > 0 && mint !== WSOL_MINT) hasNonWsolBalance = true
-    }
-  }
-
-  const hasWsol = hasWsolTransfer || hasWsolBalance
-  const hasOther = hasNonWsolTransfer || hasNonWsolBalance
-  return hasWsol && hasOther
+  return isTradeLikeKolscan(raw, wallet)
 }
 
 type KolRow = {
@@ -421,6 +287,27 @@ export async function GET(request: NextRequest) {
     const kolLimitParam = url.searchParams.get("kolLimit")
     const pageSizeParam = url.searchParams.get("pageSize")
     const maxLinksParam = url.searchParams.get("maxLinks")
+    const walletsParam = url.searchParams.get("wallets")
+
+    const uiPageParam = url.searchParams.get("uiPage")
+    const uiPageSizeParam = url.searchParams.get("uiPageSize")
+    const qParam = url.searchParams.get("q")
+
+    const uiPage = uiPageParam && uiPageParam.trim().length > 0 ? Number(uiPageParam) : 1
+    const uiPageSize = uiPageSizeParam && uiPageSizeParam.trim().length > 0 ? Number(uiPageSizeParam) : 50
+    const q = qParam && qParam.trim().length > 0 ? qParam.trim() : null
+
+    const requestingOverrides =
+      bypassCache ||
+      debugLevel > 0 ||
+      (typeof pageSizeParam === "string" && pageSizeParam.trim().length > 0) ||
+      (typeof maxLinksParam === "string" && maxLinksParam.trim().length > 0) ||
+      (typeof walletsParam === "string" && walletsParam.trim().length > 0)
+
+    const auth = requestingOverrides
+      ? requireBearerIfConfigured({ request, envVarName: "ADMIN_API_KEY", productionRequired: false })
+      : null
+    if (auth) return auth
 
     const kolLimitNum = kolLimitParam && kolLimitParam.trim().length > 0 ? Number(kolLimitParam) : NaN
     const pageSizeNum = pageSizeParam && pageSizeParam.trim().length > 0 ? Number(pageSizeParam) : NaN
@@ -434,12 +321,11 @@ export async function GET(request: NextRequest) {
       1000,
       Math.max(100, Number.isFinite(pageSizeNum) ? pageSizeNum : 200),
     )
-    const defaultMaxLinks = timeframe === "daily" ? 2_000 : timeframe === "weekly" ? 25_000 : 50_000
-    const minMaxLinks = timeframe === "daily" ? 500 : timeframe === "weekly" ? 5_000 : 10_000
-    const maxLinks = Math.min(
-      600_000,
-      Math.max(minMaxLinks, Number.isFinite(maxLinksNum) ? maxLinksNum : defaultMaxLinks),
-    )
+    const defaultMaxLinks = timeframe === "daily" ? 10_000 : timeframe === "weekly" ? 25_000 : 50_000
+    const minMaxLinks = timeframe === "daily" ? 1_000 : timeframe === "weekly" ? 5_000 : 10_000
+    const requestedMaxLinks = Math.max(minMaxLinks, Number.isFinite(maxLinksNum) ? maxLinksNum : defaultMaxLinks)
+    const publicCap = defaultMaxLinks
+    const maxLinks = Math.min(600_000, requestingOverrides ? requestedMaxLinks : Math.min(publicCap, requestedMaxLinks))
 
     const cacheKey = [
       "leaderboard",
@@ -454,7 +340,12 @@ export async function GET(request: NextRequest) {
     if (!bypassCache) {
       const hit = leaderboardCache.get(cacheKey)
       if (hit && Date.now() < hit.expiresAt) {
-        return NextResponse.json(hit.payload)
+        const out = applyUiQueryAndPagination({ payload: hit.payload, q, uiPage, uiPageSize })
+        return NextResponse.json(out, {
+          headers: {
+            "cache-control": cacheControlFor(timeframe),
+          },
+        })
       }
     }
 
@@ -462,23 +353,41 @@ export async function GET(request: NextRequest) {
 
     const supabase = createServiceClient()
 
-    const [{ data: kols, error: kolsError }, solPriceUsd] = await Promise.all([
-      supabase
-        .from("kols")
-        .select("wallet_address, display_name, avatar_url, twitter_handle, twitter_url, telegram_url, tracked_from, wallet_created_at")
-        .eq("is_active", true)
-        .eq("is_tracked", true)
-        .order("tracked_rank", { ascending: true, nullsFirst: false })
-        .order("updated_at", { ascending: false })
-        .limit(kolLimit),
+    const walletsFilter =
+      walletsParam && walletsParam.trim().length > 0
+        ? Array.from(
+            new Set(
+              walletsParam
+                .split(",")
+                .map((s) => s.trim())
+                .filter((s) => s.length > 0),
+            ),
+          )
+        : null
+
+    const [kolsResult, solPriceUsd] = await Promise.all([
+      (() => {
+        let q = supabase
+          .from("kols")
+          .select("wallet_address, display_name, avatar_url, twitter_handle, twitter_url, telegram_url, tracked_from, wallet_created_at")
+          .eq("is_active", true)
+          .eq("is_tracked", true)
+          .order("tracked_rank", { ascending: true, nullsFirst: false })
+          .order("updated_at", { ascending: false })
+          .limit(kolLimit)
+        if (walletsFilter && walletsFilter.length > 0) {
+          q = q.in("wallet_address", walletsFilter)
+        }
+        return q
+      })(),
       getSolPriceUsd(),
     ])
 
-    if (kolsError) {
-      return NextResponse.json({ error: kolsError.message }, { status: 500 })
+    if (kolsResult.error) {
+      return NextResponse.json({ error: kolsResult.error.message }, { status: 500 })
     }
 
-    const tracked = (kols ?? []) as KolRow[]
+    const tracked = ((kolsResult.data ?? []) as any[]) as KolRow[]
     const trackedWallets = tracked.map((k) => k.wallet_address)
     const trackedSet = new Set(trackedWallets)
     const kolMap = new Map(tracked.map((k) => [k.wallet_address, k]))
@@ -490,77 +399,89 @@ export async function GET(request: NextRequest) {
       wallets: string[]
     }>
 
-    let processed = 0
-    let cursorBlockTime: string | null = null
-    while (processed < maxLinks) {
-      let q = supabase
-        .from("tx_events")
-        .select("signature, block_time, raw")
-        .gte("block_time", cutoffIso)
-        .order("block_time", { ascending: false })
-        .limit(pageSize)
-      if (cursorBlockTime) {
-        q = q.lt("block_time", cursorBlockTime)
-      }
-
-      const { data: evData, error: evError } = await q
-
-      if (evError) {
-        return NextResponse.json({ error: evError.message }, { status: 500 })
-      }
-
-      const rows = (evData ?? []) as any[]
-      if (rows.length === 0) break
-      processed += rows.length
-
-      const sigs = rows.map((r) => String(r?.signature ?? "")).filter((s) => s.length > 0)
-      if (sigs.length === 0) {
-        const lastBt = rows[rows.length - 1]?.block_time
-        cursorBlockTime = lastBt ? String(lastBt) : null
-        if (!cursorBlockTime) break
-        if (rows.length < pageSize) break
-        continue
-      }
-
-      const linkData: any[] = []
-      const sigChunkSize = 25
-      for (let i = 0; i < sigs.length; i += sigChunkSize) {
-        const chunk = sigs.slice(i, i + sigChunkSize)
-        const { data, error } = await supabase
-          .from("tx_event_wallets")
-          .select("signature, wallet_address")
-          .in("signature", chunk)
-        if (error) {
-          return NextResponse.json({ error: error.message }, { status: 500 })
+    if (trackedWallets.length > 0) {
+      const eventsBySig = new Map<
+        string,
+        {
+          signature: string
+          block_time: string | null
+          wallets: Set<string>
         }
-        if (Array.isArray(data) && data.length > 0) linkData.push(...data)
+      >()
+
+      let processed = 0
+      while (processed < maxLinks) {
+        const to = Math.min(maxLinks, processed + pageSize)
+        const from = processed
+
+        const { data: linkRows, error: linkError } = await supabase
+          .from("tx_event_wallets")
+          .select("signature, wallet_address, tx_events(block_time)")
+          .in("wallet_address", trackedWallets)
+          .gte("tx_events.block_time", cutoffIso)
+          .order("block_time", { foreignTable: "tx_events", ascending: false })
+          .range(from, to - 1)
+
+        if (linkError) {
+          return NextResponse.json({ error: linkError.message }, { status: 500 })
+        }
+
+        const rows = (linkRows ?? []) as any[]
+        if (rows.length === 0) break
+        processed += rows.length
+
+        for (const r of rows) {
+          const signature = String(r?.signature ?? "")
+          const wallet = String(r?.wallet_address ?? "")
+          if (!signature || !wallet) continue
+          if (!trackedSet.has(wallet)) continue
+
+          const tx = (r as any)?.tx_events
+          const block_time = (tx?.block_time ?? null) as string | null
+
+          let ev = eventsBySig.get(signature)
+          if (!ev) {
+            ev = {
+              signature,
+              block_time,
+              wallets: new Set<string>(),
+            }
+            eventsBySig.set(signature, ev)
+          }
+          ev.wallets.add(wallet)
+        }
+
+        if (rows.length < pageSize) break
       }
 
-      const bySig = new Map<string, string[]>()
-      for (const l of (linkData ?? []) as any[]) {
-        const sig = String(l?.signature ?? "")
-        const w = String(l?.wallet_address ?? "")
-        if (!sig || !w) continue
-        if (!trackedSet.has(w)) continue
-        const arr = bySig.get(sig) ?? []
-        arr.push(w)
-        bySig.set(sig, arr)
+      const sigs = Array.from(eventsBySig.keys())
+      const rawBySig = new Map<string, { raw: any; block_time: string | null }>()
+
+      for (let i = 0; i < sigs.length; i += 500) {
+        const chunk = sigs.slice(i, i + 500)
+        const { data: txRows, error: txErr } = await supabase
+          .from("tx_events")
+          .select("signature, block_time, raw")
+          .in("signature", chunk)
+          .limit(1000)
+
+        if (txErr) {
+          return NextResponse.json({ error: txErr.message }, { status: 500 })
+        }
+
+        for (const r of (txRows ?? []) as any[]) {
+          const signature = String(r?.signature ?? "")
+          if (!signature) continue
+          rawBySig.set(signature, { raw: r?.raw, block_time: (r?.block_time ?? null) as string | null })
+        }
       }
 
-      for (const r of rows) {
-        const signature = String(r?.signature ?? "")
-        if (!signature) continue
-        const block_time = (r?.block_time ?? null) as string | null
-        const raw = r?.raw
-        const wallets = bySig.get(signature) ?? []
-        if (wallets.length === 0) continue
-        events.push({ signature, block_time, raw, wallets })
+      for (const e of eventsBySig.values()) {
+        const tx = rawBySig.get(e.signature)
+        const raw = tx?.raw
+        if (!raw) continue
+        events.push({ signature: e.signature, block_time: tx?.block_time ?? e.block_time, raw, wallets: Array.from(e.wallets) })
       }
-
-      const lastBt = rows[rows.length - 1]?.block_time
-      cursorBlockTime = lastBt ? String(lastBt) : null
-      if (!cursorBlockTime) break
-      if (rows.length < pageSize) break
     }
 
     const walletLegs = new Map<string, TradeLeg[]>()
@@ -772,7 +693,7 @@ export async function GET(request: NextRequest) {
 
     const rows: LeaderboardRow[] = tracked
       .map((k) => {
-        const legs = walletLegs.get(k.wallet_address) ?? []
+        const legs = (walletLegs.get(k.wallet_address) ?? []).slice().sort((a, b) => a.block_time_ms - b.block_time_ms)
         const agg = computeRealizedTradePnL(legs)
         const profit_sol = agg.realized_lamports / 1e9
 
@@ -844,7 +765,12 @@ export async function GET(request: NextRequest) {
         if (leaderboardCache.size > 50) leaderboardCache.clear()
         leaderboardCache.set(cacheKey, { expiresAt: Date.now() + getCacheTtlMs(timeframe), payload })
       }
-      return NextResponse.json(payload)
+      const out = applyUiQueryAndPagination({ payload, q, uiPage, uiPageSize })
+      return NextResponse.json(out, {
+        headers: {
+          "cache-control": cacheControlFor(timeframe),
+        },
+      })
     }
 
     const payload = { ok: true, buildSha, timeframe, solPriceUsd, rows }
@@ -852,7 +778,12 @@ export async function GET(request: NextRequest) {
       if (leaderboardCache.size > 50) leaderboardCache.clear()
       leaderboardCache.set(cacheKey, { expiresAt: Date.now() + getCacheTtlMs(timeframe), payload })
     }
-    return NextResponse.json(payload)
+    const out = applyUiQueryAndPagination({ payload, q, uiPage, uiPageSize })
+    return NextResponse.json(out, {
+      headers: {
+        "cache-control": cacheControlFor(timeframe),
+      },
+    })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? String(e) }, { status: 500 })
   }

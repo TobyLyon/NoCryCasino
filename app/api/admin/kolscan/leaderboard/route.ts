@@ -8,6 +8,50 @@ function toInt(v: string | null, fallback: number): number {
   return Math.floor(n)
 }
 
+function extractNextDataJson(html: string): any | null {
+  const m = html.match(
+    /<script[^>]+id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i,
+  )
+  if (!m?.[1]) return null
+  try {
+    return JSON.parse(m[1])
+  } catch {
+    return null
+  }
+}
+
+function findLeaderboardRows(root: any): any[] | null {
+  const queue: any[] = [root]
+  const seen = new Set<any>()
+
+  while (queue.length > 0) {
+    const cur = queue.shift()
+    if (!cur || (typeof cur !== "object" && !Array.isArray(cur))) continue
+    if (typeof cur === "object") {
+      if (seen.has(cur)) continue
+      seen.add(cur)
+    }
+
+    if (Array.isArray(cur)) {
+      if (cur.length > 0) {
+        const first = cur[0]
+        const looksLikeRow =
+          first &&
+          typeof first === "object" &&
+          (typeof (first as any).wallet_address === "string" || typeof (first as any).wallet === "string") &&
+          ("profit" in (first as any) || "profit_sol" in (first as any) || "profitUsd" in (first as any) || "profit_usd" in (first as any))
+        if (looksLikeRow) return cur
+      }
+      for (const v of cur) queue.push(v)
+      continue
+    }
+
+    for (const v of Object.values(cur)) queue.push(v)
+  }
+
+  return null
+}
+
 function timeframeToDays(tf: string): 1 | 7 | 30 {
   const t = tf.toLowerCase()
   if (t === "weekly" || t === "7") return 7
@@ -47,6 +91,39 @@ async function warmKolscanCookie(): Promise<string> {
   return cookieHeader
 }
 
+async function fetchKolscanLeaderboardFromHtml(args: { timeframe: 1 | 7 | 30; page: number; pageSize: number }): Promise<any> {
+  const url = `https://kolscan.io/leaderboard?timeframe=${args.timeframe}`
+  const res = await fetch(url, {
+    method: "GET",
+    headers: {
+      "user-agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    },
+    cache: "no-store",
+  })
+
+  const html = await res.text()
+  if (!res.ok) {
+    return { ok: false, status: res.status, error: html.slice(0, 500) }
+  }
+
+  const nextData = extractNextDataJson(html)
+  if (!nextData) {
+    return { ok: false, status: 502, error: "Missing __NEXT_DATA__" }
+  }
+
+  const rows = findLeaderboardRows(nextData)
+  if (!rows) {
+    return { ok: false, status: 502, error: "Failed to locate leaderboard rows" }
+  }
+
+  const start = Math.max(0, args.page) * Math.max(1, args.pageSize)
+  const end = start + Math.max(1, args.pageSize)
+
+  return { ok: true, status: 200, data: rows.slice(start, end) }
+}
+
 async function fetchKolscanLeaderboard(args: { timeframe: 1 | 7 | 30; page: number; pageSize: number }): Promise<any> {
   const cookieHeader = await warmKolscanCookie()
 
@@ -75,14 +152,30 @@ async function fetchKolscanLeaderboard(args: { timeframe: 1 | 7 | 30; page: numb
 
   const text = await res.text()
   if (!res.ok) {
-    return { ok: false, status: res.status, error: text.slice(0, 500) }
+    const fallback = await fetchKolscanLeaderboardFromHtml(args)
+    if (fallback.ok) return fallback
+    return {
+      ok: false,
+      status: res.status,
+      error: text.slice(0, 500),
+      fallback_error: fallback?.error,
+      fallback_status: fallback?.status,
+    }
   }
 
   let json: any = null
   try {
     json = JSON.parse(text)
   } catch {
-    return { ok: false, status: 502, error: `Invalid JSON: ${text.slice(0, 200)}` }
+    const fallback = await fetchKolscanLeaderboardFromHtml(args)
+    if (fallback.ok) return fallback
+    return {
+      ok: false,
+      status: 502,
+      error: `Invalid JSON: ${text.slice(0, 200)}`,
+      fallback_error: fallback?.error,
+      fallback_status: fallback?.status,
+    }
   }
 
   return { ok: true, status: 200, data: json?.data ?? json }

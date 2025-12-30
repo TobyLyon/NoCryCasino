@@ -8,7 +8,8 @@ import { formatDistanceToNowStrict } from "date-fns"
 type Row = {
   signature: string
   block_time: string | null
-  raw: any
+  description: string | null
+  source: string | null
 }
 
 export function WalletTxFeed({ walletAddress }: { walletAddress: string }) {
@@ -30,17 +31,40 @@ export function WalletTxFeed({ walletAddress }: { walletAddress: string }) {
     const supabase = createBrowserClient()
 
     async function fetchRows() {
-      const { data, error } = await supabase
-        .from("tx_event_wallets")
-        .select(
-          `
+      const primarySelect = `
           signature,
-          tx_events:tx_events(signature, block_time, raw)
-        `,
-        )
-        .eq("wallet_address", walletAddress)
-        .order("signature", { ascending: false })
-        .limit(50)
+          tx_events:tx_events(signature, block_time, description, raw_source)
+        `
+
+      let data: any = null
+      let error: any = null
+
+      {
+        const r = await supabase
+          .from("tx_event_wallets")
+          .select(primarySelect)
+          .eq("wallet_address", walletAddress)
+          .order("signature", { ascending: false })
+          .limit(50)
+        data = r.data
+        error = r.error
+      }
+
+      if (error && typeof error?.message === "string" && error.message.toLowerCase().includes("does not exist")) {
+        const fallbackSelect = `
+          signature,
+          tx_events:tx_events(signature, block_time)
+        `
+
+        const r = await supabase
+          .from("tx_event_wallets")
+          .select(fallbackSelect)
+          .eq("wallet_address", walletAddress)
+          .order("signature", { ascending: false })
+          .limit(50)
+        data = r.data
+        error = r.error
+      }
 
       if (!isMounted) return
 
@@ -57,7 +81,8 @@ export function WalletTxFeed({ walletAddress }: { walletAddress: string }) {
             ? {
                 signature: e.signature,
                 block_time: e.block_time ?? null,
-                raw: e.raw,
+                description: typeof e.description === "string" ? e.description : null,
+                source: typeof e.raw_source === "string" ? e.raw_source : null,
               }
             : null
         })
@@ -69,25 +94,8 @@ export function WalletTxFeed({ walletAddress }: { walletAddress: string }) {
 
     fetchRows()
 
-    const channel = supabase
-      .channel(`tx-event-wallets-${walletAddress}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "tx_event_wallets",
-          filter: `wallet_address=eq.${walletAddress}`,
-        },
-        () => {
-          fetchRows()
-        },
-      )
-      .subscribe()
-
     return () => {
       isMounted = false
-      supabase.removeChannel(channel)
     }
   }, [walletAddress])
 
@@ -103,8 +111,8 @@ export function WalletTxFeed({ walletAddress }: { walletAddress: string }) {
         ) : (
           rows.map((r) => {
             const description =
-              typeof r.raw?.description === "string" && r.raw.description.length > 0
-                ? r.raw.description
+              typeof r.description === "string" && r.description.length > 0
+                ? r.description
                 : `${r.signature.slice(0, 8)}…${r.signature.slice(-8)}`
 
             const ago = r.block_time ? formatDistanceToNowStrict(new Date(r.block_time), { addSuffix: true }) : ""

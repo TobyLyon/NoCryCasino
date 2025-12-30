@@ -30,12 +30,40 @@ export async function GET(request: NextRequest) {
     const supabase = createServiceClient()
 
     // Join tx_events <- tx_event_wallets and order by tx_events.block_time
-    const { data, error } = await supabase
-      .from("tx_events")
-      .select("signature, block_time, slot, raw, tx_event_wallets!inner(wallet_address)")
-      .eq("tx_event_wallets.wallet_address", wallet)
-      .order("block_time", { ascending: false })
-      .limit(limit)
+    const selectClause = includeRawBool
+      ? "signature, block_time, slot, source, raw, tx_event_wallets!inner(wallet_address)"
+      : "signature, block_time, slot, source, description, raw_source, raw_type, tx_event_wallets!inner(wallet_address)"
+
+    let data: any = null
+    let error: any = null
+
+    {
+      const r = await supabase
+        .from("tx_events")
+        .select(selectClause)
+        .eq("tx_event_wallets.wallet_address", wallet)
+        .order("block_time", { ascending: false })
+        .limit(limit)
+      data = r.data
+      error = r.error
+    }
+
+    if (
+      !includeRawBool &&
+      error &&
+      typeof error?.message === "string" &&
+      error.message.toLowerCase().includes("does not exist")
+    ) {
+      const fallbackSelect = "signature, block_time, slot, source, tx_event_wallets!inner(wallet_address)"
+      const r = await supabase
+        .from("tx_events")
+        .select(fallbackSelect)
+        .eq("tx_event_wallets.wallet_address", wallet)
+        .order("block_time", { ascending: false })
+        .limit(limit)
+      data = r.data
+      error = r.error
+    }
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
@@ -45,21 +73,23 @@ export async function GET(request: NextRequest) {
 
     const filtered = sourceContains
       ? rows.filter((r: any) => {
-          const s = typeof r?.raw?.source === "string" ? r.raw.source : ""
+          const s = typeof r?.raw_source === "string" ? r.raw_source : typeof r?.raw?.source === "string" ? r.raw.source : ""
           return s.toLowerCase().includes(sourceContains.toLowerCase())
         })
       : rows
 
     const events = filtered.map((r: any) => {
       const raw = r?.raw
-      const source = typeof raw?.source === "string" ? raw.source : ""
-      const type = typeof raw?.type === "string" ? raw.type : ""
+      const source = typeof r?.raw_source === "string" ? r.raw_source : typeof raw?.source === "string" ? raw.source : ""
+      const type = typeof r?.raw_type === "string" ? r.raw_type : typeof raw?.type === "string" ? raw.type : ""
+      const description = typeof r?.description === "string" ? r.description : typeof raw?.description === "string" ? raw.description : ""
       return {
         signature: String(r?.signature ?? ""),
         block_time: (r?.block_time ?? null) as string | null,
         slot: (r?.slot ?? null) as number | null,
         type,
         source,
+        description,
         raw: includeRawBool ? raw : undefined,
       }
     })
