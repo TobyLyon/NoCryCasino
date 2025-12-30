@@ -3,6 +3,7 @@ import { createServiceClient } from "@/lib/supabase/service"
 import { enforceMaxBodyBytes, rateLimit } from "@/lib/api/guards"
 import { isEmergencyHaltActive } from "@/lib/escrow/security"
 import { buildPmMessage, requireFreshIssuedAt, requireSignedBody } from "@/lib/pm/signing"
+import { consumePmNonce, isPmNonceRequired } from "@/lib/pm/nonce"
 
 export const runtime = "nodejs"
 
@@ -11,6 +12,7 @@ type Body = {
   amount_sol: number
   destination_pubkey: string
   idempotency_key: string
+  nonce?: string
   issued_at: string
   signature_base64: string
   message?: string
@@ -33,6 +35,7 @@ export async function POST(request: NextRequest) {
     const destination_pubkey = String(body?.destination_pubkey ?? "").trim()
     const amount_sol = Number(body?.amount_sol)
     const idempotency_key = String(body?.idempotency_key ?? "").trim()
+    const nonce = typeof body?.nonce === "string" ? body.nonce.trim() : ""
     const issued_at = String(body?.issued_at ?? "").trim()
     const signature_base64 = String(body?.signature_base64 ?? "").trim()
 
@@ -40,8 +43,12 @@ export async function POST(request: NextRequest) {
     if (!destination_pubkey) return NextResponse.json({ error: "Missing destination_pubkey" }, { status: 400 })
     if (!Number.isFinite(amount_sol) || amount_sol <= 0) return NextResponse.json({ error: "Invalid amount_sol" }, { status: 400 })
     if (!idempotency_key || idempotency_key.length < 8) return NextResponse.json({ error: "Missing idempotency_key" }, { status: 400 })
+    if (nonce.length > 0 && nonce.length < 8) return NextResponse.json({ error: "Invalid nonce" }, { status: 400 })
     if (!issued_at) return NextResponse.json({ error: "Missing issued_at" }, { status: 400 })
     if (!signature_base64) return NextResponse.json({ error: "Missing signature_base64" }, { status: 400 })
+
+    const nonceRequired = isPmNonceRequired()
+    if (nonceRequired && nonce.length === 0) return NextResponse.json({ error: "Missing nonce" }, { status: 400 })
 
     const freshness = requireFreshIssuedAt(issued_at, 5 * 60 * 1000)
     if (!freshness.ok) return NextResponse.json({ error: freshness.error }, { status: 400 })
@@ -51,6 +58,7 @@ export async function POST(request: NextRequest) {
       destination_pubkey,
       amount_sol: String(amount_sol),
       idempotency_key,
+      ...(nonce.length > 0 ? { nonce } : {}),
       issued_at,
     })
 
@@ -68,6 +76,18 @@ export async function POST(request: NextRequest) {
     if (!sigCheck.ok) return NextResponse.json({ error: sigCheck.error }, { status: sigCheck.status })
 
     const supabase = createServiceClient()
+
+    if (nonce.length > 0) {
+      const used = await consumePmNonce({
+        supabase,
+        walletAddress: wallet_address,
+        nonce,
+        action: "pm_withdraw_request",
+        issuedAt: issued_at,
+      })
+      if (!used.ok) return NextResponse.json({ error: used.error }, { status: used.status })
+    }
+
     const { data, error } = await supabase.rpc("pm_request_withdrawal", {
       p_user_pubkey: wallet_address,
       p_amount: amount_sol,
