@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { createServiceClient } from "@/lib/supabase/service"
 import { enforceMaxBodyBytes, rateLimit, requireBearerIfConfigured } from "@/lib/api/guards"
+import { normalizeKolDisplayName } from "@/lib/utils"
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -31,8 +32,7 @@ function extractKolscanAccounts(pageText: string): Array<{ wallet: string; name:
     const wallet = m[2]!
     if (seen.has(wallet)) continue
     seen.add(wallet)
-    const name = nameRaw.replace(/\s+/g, " ").trim()
-    out.push({ wallet, name: name.length > 0 ? name : null })
+    out.push({ wallet, name: normalizeKolDisplayName(nameRaw) })
   }
 
   const htmlAnchor = /<a[^>]+href=["']\/account\/([1-9A-HJ-NP-Za-km-z]{32,44})(?:\?[^"']*)?["'][^>]*>([^<]{1,80})<\/a>/g
@@ -41,8 +41,7 @@ function extractKolscanAccounts(pageText: string): Array<{ wallet: string; name:
     const nameRaw = m[2]!
     if (seen.has(wallet)) continue
     seen.add(wallet)
-    const name = nameRaw.replace(/\s+/g, " ").trim()
-    out.push({ wallet, name: name.length > 0 ? name : null })
+    out.push({ wallet, name: normalizeKolDisplayName(nameRaw) })
   }
 
   const fallback = /\/account\/([1-9A-HJ-NP-Za-km-z]{32,44})/g
@@ -85,14 +84,32 @@ function extractProfileMeta(html: string): { display_name: string | null; avatar
   const titleMatch = html.match(/property=["']og:title["']\s+content=["']([^"']+)["']/i)
   const imageMatch = html.match(/property=["']og:image["']\s+content=["']([^"']+)["']/i)
 
-  const display_name_raw = titleMatch ? titleMatch[1] : null
-  const display_name =
-    typeof display_name_raw === "string" && display_name_raw.trim().length > 0
-      ? display_name_raw.replace(/\s+/g, " ").trim()
-      : null
+  const display_name = normalizeKolDisplayName(titleMatch ? titleMatch[1] : null)
 
   const avatar_raw = imageMatch ? imageMatch[1] : null
-  const avatar_url = typeof avatar_raw === "string" && avatar_raw.trim().length > 0 ? avatar_raw.trim() : null
+  let avatar_url: string | null = null
+  if (typeof avatar_raw === "string" && avatar_raw.trim().length > 0) {
+    try {
+      const u = new URL(avatar_raw.trim(), "https://kolscan.io")
+      if (u.pathname === "/_next/image") {
+        const inner = u.searchParams.get("url")
+        if (inner) {
+          try {
+            const decoded = decodeURIComponent(inner)
+            avatar_url = new URL(decoded, "https://kolscan.io").toString()
+          } catch {
+            avatar_url = u.toString()
+          }
+        } else {
+          avatar_url = u.toString()
+        }
+      } else {
+        avatar_url = u.toString()
+      }
+    } catch {
+      avatar_url = avatar_raw.trim()
+    }
+  }
 
   return { display_name, avatar_url }
 }

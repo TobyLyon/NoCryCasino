@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { createServiceClient } from "@/lib/supabase/service"
 import { enforceMaxBodyBytes, rateLimit, requireBearerIfConfigured } from "@/lib/api/guards"
+import { normalizeKolDisplayName } from "@/lib/utils"
 
 function toXHandleUrl(handle: string): string {
   const h = handle.trim().replace(/^@/, "")
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest) {
       if (typeof wallet_address !== "string" || wallet_address.length === 0) return null
 
       const nameRaw = k?.display_name ?? k?.name
-      const display_name = typeof nameRaw === "string" && nameRaw.length > 0 ? nameRaw : null
+      const display_name = normalizeKolDisplayName(nameRaw)
 
       const avatarRaw = k?.avatar_url ?? k?.avatar
       const avatar_url = typeof avatarRaw === "string" && avatarRaw.length > 0 ? avatarRaw : null

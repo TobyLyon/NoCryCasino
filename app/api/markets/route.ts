@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { createServiceClient } from "@/lib/supabase/service"
+import { normalizeKolDisplayName } from "@/lib/utils"
 
 type WindowKey = "daily" | "weekly" | "monthly"
 
@@ -25,7 +26,20 @@ export async function GET(request: NextRequest) {
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-    return NextResponse.json({ ok: true, window_key, markets: data ?? [] })
+    const markets = (data ?? []).map((m: any) => {
+      const k = (m as any)?.kols
+      if (!k || typeof k !== "object") return m
+      const display_name = normalizeKolDisplayName((k as any).display_name)
+      return {
+        ...m,
+        kols: {
+          ...k,
+          display_name,
+        },
+      }
+    })
+
+    return NextResponse.json({ ok: true, window_key, markets })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? String(e) }, { status: 500 })
   }

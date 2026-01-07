@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { createServiceClient } from "@/lib/supabase/service"
+import { rateLimit, requireBearerIfConfigured } from "@/lib/api/guards"
+import { normalizeKolDisplayName } from "@/lib/utils"
 import { computeNetSolLamports, computeTokenTransfers } from "@/lib/analytics/token-pnl"
 import {
   computeRealizedTradePnL as computeRealizedTradePnLKolscan,
@@ -7,7 +9,6 @@ import {
   extractTradeLeg as extractTradeLegKolscan,
   isTradeLike as isTradeLikeKolscan,
 } from "@/lib/analytics/kolscan-pnl"
-import { rateLimit, requireBearerIfConfigured } from "@/lib/api/guards"
 
 type CacheEntry = { expiresAt: number; payload: any }
 
@@ -739,7 +740,7 @@ export async function GET(request: NextRequest) {
         return {
           rank: 0,
           wallet_address: k.wallet_address,
-          display_name: k.display_name,
+          display_name: normalizeKolDisplayName(k.display_name),
           avatar_url: k.avatar_url,
           twitter_handle: k.twitter_handle,
           twitter_url: k.twitter_url,

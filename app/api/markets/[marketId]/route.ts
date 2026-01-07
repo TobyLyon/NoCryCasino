@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { createServiceClient } from "@/lib/supabase/service"
+import { normalizeKolDisplayName } from "@/lib/utils"
 
 export const runtime = "nodejs"
 
@@ -24,7 +25,19 @@ export async function GET(
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     if (!data) return NextResponse.json({ error: "Market not found" }, { status: 404 })
 
-    return NextResponse.json({ ok: true, market: data })
+    const k = (data as any)?.kols
+    const market =
+      k && typeof k === "object"
+        ? {
+            ...(data as any),
+            kols: {
+              ...(k as any),
+              display_name: normalizeKolDisplayName((k as any).display_name),
+            },
+          }
+        : data
+
+    return NextResponse.json({ ok: true, market })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? String(e) }, { status: 500 })
   }

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { createServiceClient } from "@/lib/supabase/service"
 import { enforceMaxBodyBytes, rateLimit, requireBearerIfConfigured } from "@/lib/api/guards"
+import { normalizeKolDisplayName } from "@/lib/utils"
 
 export async function POST(request: NextRequest) {
   const limited = rateLimit({ request, key: "admin:kols", limit: 60, windowMs: 60_000 })
@@ -23,7 +24,7 @@ export async function POST(request: NextRequest) {
       if (typeof wallet_address !== "string" || wallet_address.length === 0) return null
 
       const display_name_raw = r.display_name ?? r.displayName
-      const display_name = typeof display_name_raw === "string" && display_name_raw.trim().length > 0 ? display_name_raw.trim() : undefined
+      const display_name = normalizeKolDisplayName(display_name_raw) ?? undefined
 
       const avatar_url_raw = r.avatar_url ?? r.avatarUrl
       const avatar_url = typeof avatar_url_raw === "string" && avatar_url_raw.trim().length > 0 ? avatar_url_raw.trim() : undefined
