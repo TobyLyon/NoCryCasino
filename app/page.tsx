@@ -1,7 +1,8 @@
 "use client"
 
 import { Header } from "@/components/header"
-import { useEffect, useMemo, useState } from "react"
+import { AsciiSpaceBackground } from "@/components/ascii-space-background"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 
 export default function HomePage() {
   // Large detailed ASCII laughing-crying emoji (like reference image)
@@ -48,6 +49,9 @@ export default function HomePage() {
 `
 
   const [tickerItems, setTickerItems] = useState<string[]>(["LOADING DAILY KOL PNL"])
+  const [tickerRepeat, setTickerRepeat] = useState(1)
+  const tickerRef = useRef<HTMLDivElement | null>(null)
+  const tickerRowRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -90,25 +94,86 @@ export default function HomePage() {
     }
   }, [])
 
-  const tickerText = useMemo(() => {
-    const items = tickerItems.length > 0 ? tickerItems : ["NO DAILY DATA"]
-    const doubled = [...items, ...items]
-    return doubled
+  const tickerBaseItems = useMemo(() => {
+    return tickerItems.length > 0 ? tickerItems : ["NO DAILY DATA"]
   }, [tickerItems])
+
+  const tickerRowItems = useMemo(() => {
+    const out: string[] = []
+    const reps = Math.max(1, Math.min(50, Math.floor(tickerRepeat)))
+    for (let i = 0; i < reps; i += 1) out.push(...tickerBaseItems)
+    return out.length > 0 ? out : ["NO DAILY DATA"]
+  }, [tickerBaseItems, tickerRepeat])
+
+  useLayoutEffect(() => {
+    if (!tickerRef.current || !tickerRowRef.current) return
+
+    const container = tickerRef.current
+    const row = tickerRowRef.current
+
+    let raf = 0
+
+    const compute = () => {
+      if (!container || !row) return
+      const c = container.getBoundingClientRect().width
+      const r = row.getBoundingClientRect().width
+      if (!Number.isFinite(c) || !Number.isFinite(r) || c <= 0 || r <= 0) return
+
+      const unitWidth = r / Math.max(1, tickerRepeat)
+      if (!Number.isFinite(unitWidth) || unitWidth <= 0) return
+
+      const next = Math.max(1, Math.min(50, Math.ceil((c * 2) / unitWidth)))
+      if (next !== tickerRepeat) setTickerRepeat(next)
+    }
+
+    const schedule = () => {
+      if (raf) cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(compute)
+    }
+
+    schedule()
+
+    const ro = new ResizeObserver(schedule)
+    ro.observe(container)
+    ro.observe(row)
+
+    const fonts: any = (document as any)?.fonts
+    if (fonts?.ready && typeof fonts.ready.then === "function") {
+      fonts.ready.then(schedule).catch(() => null)
+    }
+
+    window.addEventListener("load", schedule)
+
+    return () => {
+      if (raf) cancelAnimationFrame(raf)
+      ro.disconnect()
+      window.removeEventListener("load", schedule)
+    }
+  }, [tickerBaseItems, tickerRepeat])
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-black text-[#7CFF6B]">
+      <AsciiSpaceBackground />
       <div className="relative z-10 flex flex-col min-h-screen">
         <Header />
 
         {/* Scrolling ticker */}
-        <div className="ncc-ticker">
+        <div className="ncc-ticker" ref={tickerRef}>
           <div className="ncc-ticker-track">
-            {tickerText.map((t, i) => (
-              <span key={i} className="ncc-ticker-item">
-                ◆ {t} ◆
-              </span>
-            ))}
+            <div className="ncc-ticker-row" ref={tickerRowRef}>
+              {tickerRowItems.map((t, i) => (
+                <span key={`a-${i}`} className="ncc-ticker-item">
+                  ◆ {t} ◆
+                </span>
+              ))}
+            </div>
+            <div className="ncc-ticker-row" aria-hidden="true">
+              {tickerRowItems.map((t, i) => (
+                <span key={`b-${i}`} className="ncc-ticker-item">
+                  ◆ {t} ◆
+                </span>
+              ))}
+            </div>
           </div>
         </div>
 

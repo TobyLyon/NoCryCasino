@@ -112,7 +112,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    const addresses = uniqStrings((kols ?? []).map((k: any) => String(k.wallet_address)))
+    const nowIso = new Date().toISOString()
+
+    const { data: trackedWallets, error: trackedErr } = await supabase
+      .from("tracked_wallets")
+      .select("wallet_address")
+      .eq("is_active", true)
+      .or(`tracked_until.is.null,tracked_until.gt.${nowIso}`)
+      .order("updated_at", { ascending: false })
+      .limit(limit)
+
+    if (trackedErr) {
+      return NextResponse.json({ error: trackedErr.message }, { status: 500 })
+    }
+
+    const addresses = uniqStrings([
+      ...(kols ?? []).map((k: any) => String(k.wallet_address)),
+      ...(trackedWallets ?? []).map((w: any) => String(w.wallet_address)),
+    ])
 
     const current = await heliusGetWebhook(webhookId, apiKey)
 

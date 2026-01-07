@@ -169,6 +169,7 @@ export async function auditEscrowSecurity(): Promise<EscrowSecurityAudit> {
 export async function logEscrowOperation(args: {
   operation: "deposit" | "payout" | "fee_transfer"
   escrow_address: string
+  tournament_id?: string
   market_id?: string
   order_id?: string
   amount_sol: number
@@ -179,7 +180,7 @@ export async function logEscrowOperation(args: {
   try {
     const supabase = createServiceClient()
 
-    await supabase.from("escrow_audit_log").insert({
+    const baseRow = {
       operation: args.operation,
       escrow_address: args.escrow_address,
       market_id: args.market_id,
@@ -189,7 +190,19 @@ export async function logEscrowOperation(args: {
       from_wallet: args.from_wallet,
       to_wallet: args.to_wallet,
       created_at: new Date().toISOString(),
+    }
+
+    const { error } = await supabase.from("escrow_audit_log").insert({
+      ...baseRow,
+      tournament_id: args.tournament_id,
     })
+
+    if (error) {
+      const msg = typeof error.message === "string" ? error.message.toLowerCase() : ""
+      if (msg.includes("tournament_id") && msg.includes("does not exist")) {
+        await supabase.from("escrow_audit_log").insert(baseRow)
+      }
+    }
   } catch {
     // Silently fail - audit logging should not break operations
     console.error("Failed to log escrow operation")

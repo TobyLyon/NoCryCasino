@@ -37,9 +37,35 @@ export async function POST(request: NextRequest) {
       p_error: errorMsg,
     })
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (!error) {
+      return NextResponse.json({ ok: true, withdrawal_id, result: data ?? null })
+    }
 
-    return NextResponse.json({ ok: true, withdrawal_id, result: data ?? null })
+    const msg = typeof error.message === "string" ? error.message.toLowerCase() : ""
+    const missingFn = msg.includes("pm_fail_withdrawal_admin") && msg.includes("does not exist")
+    if (!missingFn) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    const { data: row, error: rowErr } = await supabase
+      .from("escrow_withdrawals")
+      .select("withdrawal_id, processing_nonce")
+      .eq("withdrawal_id", withdrawal_id)
+      .maybeSingle()
+
+    if (rowErr) return NextResponse.json({ error: rowErr.message }, { status: 500 })
+    const processing_nonce = typeof (row as any)?.processing_nonce === "string" ? String((row as any).processing_nonce) : ""
+    if (!processing_nonce || processing_nonce.trim().length < 8) {
+      return NextResponse.json({ error: "Withdrawal not claimed (missing processing_nonce)" }, { status: 409 })
+    }
+
+    const { data: data2, error: err2 } = await supabase.rpc("pm_fail_withdrawal", {
+      p_withdrawal_id: withdrawal_id,
+      p_processing_nonce: processing_nonce,
+      p_error: errorMsg,
+    })
+
+    if (err2) return NextResponse.json({ error: err2.message }, { status: 500 })
+
+    return NextResponse.json({ ok: true, withdrawal_id, result: data2 ?? null })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? String(e) }, { status: 500 })
   }

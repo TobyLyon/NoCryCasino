@@ -75,6 +75,9 @@ export function Header() {
           <Link href="/markets" className="text-muted-foreground hover:text-foreground transition-colors">
             Markets
           </Link>
+          <Link href="/pm" className="text-muted-foreground hover:text-foreground transition-colors">
+            Prediction Markets
+          </Link>
           <Link href="/leaderboard" className="text-muted-foreground hover:text-foreground transition-colors">
             Leaderboard
           </Link>

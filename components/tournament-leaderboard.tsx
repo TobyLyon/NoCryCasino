@@ -16,7 +16,13 @@ interface LeaderboardEntry {
   current_volume: number
 }
 
-export function TournamentLeaderboard({ tournamentId }: { tournamentId: string }) {
+export function TournamentLeaderboard({
+  tournamentId,
+  tournamentType: _tournamentType,
+}: {
+  tournamentId: string
+  tournamentType?: string
+}) {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [loading, setLoading] = useState(true)
   const supabase = createBrowserClient()
@@ -26,10 +32,7 @@ export function TournamentLeaderboard({ tournamentId }: { tournamentId: string }
       try {
         const { data, error } = await supabase
           .from("tournament_entries")
-          .select(`
-            *,
-            users!inner(wallet_address)
-          `)
+          .select("id, tournament_id, wallet_address, current_roi, current_volume, status")
           .eq("tournament_id", tournamentId)
           .order("current_roi", { ascending: false })
 
@@ -41,7 +44,7 @@ export function TournamentLeaderboard({ tournamentId }: { tournamentId: string }
         const formattedData =
           data?.map((entry, index) => ({
             rank: index + 1,
-            player: entry.users.wallet_address,
+            player: entry.wallet_address,
             pnl: Number(entry.current_roi) || 0,
             trades: 0, // TODO: Add trades count
             status: entry.status as "active" | "eliminated" | "winner",

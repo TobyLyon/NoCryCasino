@@ -14,7 +14,7 @@ import { useWallet, useConnection } from "@solana/wallet-adapter-react"
 import { Shield, Lock, CheckCircle2, AlertTriangle } from "lucide-react"
 import { useState } from "react"
 import { useToast } from "@/hooks/use-toast"
-import { depositToEscrow } from "@/lib/solana/escrow"
+import { depositToEscrow, depositToEscrowAddress } from "@/lib/solana/escrow"
 import { verifyAndCreateEntry } from "@/lib/tournament-entry"
 
 interface Tournament {
@@ -25,6 +25,7 @@ interface Tournament {
   participants: number
   maxParticipants: number
   status: "live" | "upcoming" | "ended"
+  escrowWalletAddress?: string | null
 }
 
 export function TournamentEntry({ tournament }: { tournament: Tournament }) {
@@ -89,7 +90,16 @@ export function TournamentEntry({ tournament }: { tournament: Tournament }) {
       }
 
       // Only proceed with payment if eligible
-      const signature = await depositToEscrow(connection, publicKey, tournament.entryFee, sendTransaction)
+      const signature =
+        typeof tournament.escrowWalletAddress === "string" && tournament.escrowWalletAddress.trim().length > 0
+          ? await depositToEscrowAddress(
+              connection,
+              publicKey,
+              tournament.entryFee,
+              tournament.escrowWalletAddress.trim(),
+              sendTransaction,
+            )
+          : await depositToEscrow(connection, publicKey, tournament.entryFee, sendTransaction)
 
       const result = await verifyAndCreateEntry(publicKey.toBase58(), tournament.id, signature, tournament.entryFee)
 

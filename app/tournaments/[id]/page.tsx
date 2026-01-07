@@ -36,6 +36,7 @@ export default async function TournamentPage({ params }: { params: { id: string 
     id: tournament.id,
     title: tournament.title,
     description: tournament.description,
+    tournamentType: tournament.tournament_type,
     prizePool: Number(tournament.prize_pool),
     entryFee: Number(tournament.entry_fee),
     participants: tournament.current_participants || 0,
@@ -45,6 +46,7 @@ export default async function TournamentPage({ params }: { params: { id: string 
     status,
     endsAt: new Date(tournament.end_date),
     startedAt: new Date(tournament.start_date),
+    escrowWalletAddress: tournament.escrow_wallet_address || null,
     rules: tournament.rules || [
       `First to reach +${tournament.target_value}% wins`,
       "No wash trading or manipulation",
@@ -60,7 +62,7 @@ export default async function TournamentPage({ params }: { params: { id: string 
         <div className="grid lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-8">
             <TournamentDetails tournament={formattedTournament} />
-            <TournamentLeaderboard tournamentId={tournament.id} />
+            <TournamentLeaderboard tournamentId={tournament.id} tournamentType={tournament.tournament_type} />
           </div>
 
           <div className="lg:col-span-1">

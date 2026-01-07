@@ -66,6 +66,10 @@ export async function depositToEscrowAddress(
 ): Promise<string> {
   console.log("[v0] Creating escrow deposit for", amount, "SOL")
 
+  if (!escrowAddress || escrowAddress.trim().length === 0) {
+    throw new Error("Missing escrow wallet address")
+  }
+
   const escrowPubkey = new PublicKey(escrowAddress)
   const lamports = Math.floor(amount * LAMPORTS_PER_SOL)
 

@@ -91,6 +91,13 @@ function extractWalletAddresses(evt: any): string[] {
   return Array.from(out)
 }
 
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = []
+  const s = Math.max(1, Math.floor(size))
+  for (let i = 0; i < arr.length; i += s) out.push(arr.slice(i, i + s))
+  return out
+}
+
 export async function POST(request: NextRequest) {
   const limited = rateLimit({ request, key: "webhooks:helius", limit: 600, windowMs: 60_000 })
   if (limited) return limited
@@ -133,12 +140,21 @@ export async function POST(request: NextRequest) {
 
       const wallets = extractWalletAddresses(evt)
 
-      const { data: trackedWallets } = await supabase
-        .from("kols")
-        .select("wallet_address")
-        .in("wallet_address", wallets)
-        .eq("is_active", true)
-        .eq("is_tracked", true)
+      const trackedWallets: any[] = []
+      for (const wChunk of chunk(wallets, 500)) {
+        const { data, error } = await supabase
+          .from("kols")
+          .select("wallet_address")
+          .in("wallet_address", wChunk)
+          .eq("is_active", true)
+          .eq("is_tracked", true)
+
+        if (error) {
+          return NextResponse.json({ error: "Failed to query kols", details: error.message }, { status: 500 })
+        }
+
+        if (Array.isArray(data) && data.length > 0) trackedWallets.push(...data)
+      }
 
       const trackedSet = new Set((trackedWallets ?? []).map((w: any) => w.wallet_address))
       const links = Array.from(trackedSet).map((wallet_address) => ({ signature, wallet_address }))
@@ -150,7 +166,36 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      results.push({ signature, stored: true, walletsLinked: links.length })
+      const nowIso = new Date().toISOString()
+      const trackedGeneric: any[] = []
+      for (const wChunk of chunk(wallets, 500)) {
+        const { data, error } = await supabase
+          .from("tracked_wallets")
+          .select("wallet_address, tracked_until")
+          .in("wallet_address", wChunk)
+          .eq("is_active", true)
+          .or(`tracked_until.is.null,tracked_until.gt.${nowIso}`)
+
+        if (error) {
+          return NextResponse.json({ error: "Failed to query tracked wallets", details: error.message }, { status: 500 })
+        }
+
+        if (Array.isArray(data) && data.length > 0) trackedGeneric.push(...data)
+      }
+
+      const genericSet = new Set((trackedGeneric ?? []).map((w: any) => String(w.wallet_address)))
+      const genericLinks = Array.from(genericSet)
+        .filter((wallet_address) => wallet_address.length > 0)
+        .map((wallet_address) => ({ signature, wallet_address }))
+
+      if (genericLinks.length > 0) {
+        const { error: linkErr } = await supabase.from("tx_event_tracked_wallets").upsert(genericLinks)
+        if (linkErr) {
+          return NextResponse.json({ error: "Failed to link tracked wallets", details: linkErr.message }, { status: 500 })
+        }
+      }
+
+      results.push({ signature, stored: true, walletsLinked: links.length + genericLinks.length })
     }
 
     return NextResponse.json({ ok: true, count: results.length, results })
