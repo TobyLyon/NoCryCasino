@@ -298,7 +298,6 @@ export async function GET(request: NextRequest) {
     const q = qParam && qParam.trim().length > 0 ? qParam.trim() : null
 
     const requestingOverrides =
-      bypassCache ||
       debugLevel > 0 ||
       (typeof pageSizeParam === "string" && pageSizeParam.trim().length > 0) ||
       (typeof maxLinksParam === "string" && maxLinksParam.trim().length > 0) ||
