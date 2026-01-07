@@ -324,7 +324,7 @@ export async function GET(request: NextRequest) {
     const defaultMaxLinks = timeframe === "daily" ? 10_000 : timeframe === "weekly" ? 25_000 : 50_000
     const minMaxLinks = timeframe === "daily" ? 1_000 : timeframe === "weekly" ? 5_000 : 10_000
     const requestedMaxLinks = Math.max(minMaxLinks, Number.isFinite(maxLinksNum) ? maxLinksNum : defaultMaxLinks)
-    const publicCap = timeframe === "daily" ? 2_000 : timeframe === "weekly" ? 7_500 : 15_000
+    const publicCap = timeframe === "daily" ? 750 : timeframe === "weekly" ? 3_000 : 6_000
     const maxLinks = Math.min(600_000, requestingOverrides ? requestedMaxLinks : Math.min(publicCap, requestedMaxLinks))
 
     const cacheKey = [
@@ -466,7 +466,7 @@ export async function GET(request: NextRequest) {
       const sigs = Array.from(eventsBySig.keys())
       const rawBySig = new Map<string, { raw: any; block_time: string | null }>()
 
-      const sigChunkSize = requestingOverrides ? 100 : 40
+      const sigChunkSize = requestingOverrides ? 75 : 12
 
       for (let i = 0; i < sigs.length; i += sigChunkSize) {
         const chunk = sigs.slice(i, i + sigChunkSize)
@@ -477,7 +477,20 @@ export async function GET(request: NextRequest) {
           .limit(1000)
 
         if (txErr) {
-          return NextResponse.json({ error: txErr.message, stage: "tx_events" }, { status: 500 })
+          return NextResponse.json(
+            {
+              error: txErr.message,
+              stage: "tx_events",
+              buildSha,
+              sigsTotal: sigs.length,
+              sigChunkSize,
+              thisChunkSize: chunk.length,
+              code: (txErr as any)?.code ?? null,
+              details: (txErr as any)?.details ?? null,
+              hint: (txErr as any)?.hint ?? null,
+            },
+            { status: 500 },
+          )
         }
 
         for (const r of (txRows ?? []) as any[]) {
