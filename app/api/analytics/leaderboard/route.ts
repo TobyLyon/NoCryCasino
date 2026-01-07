@@ -324,7 +324,7 @@ export async function GET(request: NextRequest) {
     const defaultMaxLinks = timeframe === "daily" ? 10_000 : timeframe === "weekly" ? 25_000 : 50_000
     const minMaxLinks = timeframe === "daily" ? 1_000 : timeframe === "weekly" ? 5_000 : 10_000
     const requestedMaxLinks = Math.max(minMaxLinks, Number.isFinite(maxLinksNum) ? maxLinksNum : defaultMaxLinks)
-    const publicCap = defaultMaxLinks
+    const publicCap = timeframe === "daily" ? 2_000 : timeframe === "weekly" ? 7_500 : 15_000
     const maxLinks = Math.min(600_000, requestingOverrides ? requestedMaxLinks : Math.min(publicCap, requestedMaxLinks))
 
     const cacheKey = [
@@ -466,8 +466,10 @@ export async function GET(request: NextRequest) {
       const sigs = Array.from(eventsBySig.keys())
       const rawBySig = new Map<string, { raw: any; block_time: string | null }>()
 
-      for (let i = 0; i < sigs.length; i += 500) {
-        const chunk = sigs.slice(i, i + 500)
+      const sigChunkSize = requestingOverrides ? 100 : 40
+
+      for (let i = 0; i < sigs.length; i += sigChunkSize) {
+        const chunk = sigs.slice(i, i + sigChunkSize)
         const { data: txRows, error: txErr } = await supabase
           .from("tx_events")
           .select("signature, block_time, raw")
