@@ -4,9 +4,16 @@ import Link from "next/link"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
-import { Search } from "lucide-react"
+import { Menu, Search } from "lucide-react"
 import { WalletButton } from "@/components/wallet-button"
 import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 import solLogo from "@/kolscan-clone/public/images/solana-sol-logo.png"
 
@@ -14,6 +21,13 @@ export function Header() {
   const router = useRouter()
   const [query, setQuery] = useState("")
   const [solPriceUsd, setSolPriceUsd] = useState<number | null>(null)
+
+  const navLinks = [
+    { href: "/", label: "Home" },
+    { href: "/markets", label: "Markets" },
+    { href: "/pm", label: "Prediction Markets" },
+    { href: "/leaderboard", label: "Leaderboard" },
+  ]
 
   useEffect(() => {
     let mounted = true
@@ -69,21 +83,36 @@ export function Header() {
         </div>
 
         <nav className="hidden md:flex items-center gap-5 text-sm">
-          <Link href="/" className="text-muted-foreground hover:text-foreground transition-colors">
-            Home
-          </Link>
-          <Link href="/markets" className="text-muted-foreground hover:text-foreground transition-colors">
-            Markets
-          </Link>
-          <Link href="/pm" className="text-muted-foreground hover:text-foreground transition-colors">
-            Prediction Markets
-          </Link>
-          <Link href="/leaderboard" className="text-muted-foreground hover:text-foreground transition-colors">
-            Leaderboard
-          </Link>
+          {navLinks.map((l) => (
+            <Link key={l.href} href={l.href} className="text-muted-foreground hover:text-foreground transition-colors">
+              {l.label}
+            </Link>
+          ))}
         </nav>
 
         <div className="flex-1" />
+
+        <div className="md:hidden">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="icon" className="bg-transparent" aria-label="Open menu">
+                <Menu className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              {navLinks.map((l, idx) => (
+                <div key={l.href}>
+                  <DropdownMenuItem asChild>
+                    <Link href={l.href} className="w-full">
+                      {l.label}
+                    </Link>
+                  </DropdownMenuItem>
+                  {idx !== navLinks.length - 1 && <DropdownMenuSeparator />}
+                </div>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
 
         <div className="hidden lg:flex items-center gap-2">
           <div className="relative">
