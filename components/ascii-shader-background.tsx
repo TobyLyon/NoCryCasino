@@ -71,12 +71,25 @@ function AsciiShaderBackgroundInner({
     const FRAME_TIME = TARGET_FPS > 0 ? 1000 / TARGET_FPS : Infinity
 
     // Shader functions - compute brightness at each (x, y, t)
+    // Each shader now includes dynamic spotlight/illumination effects
     const shaders: Record<ShaderMode, (nx: number, ny: number, t: number) => number> = {
       waves: (nx, ny, t) => {
         const wave1 = fastSin(nx * 6 + t * 0.4) * 0.3
         const wave2 = fastCos(ny * 5 - t * 0.3) * 0.3
         const wave3 = fastSin((nx + ny) * 4 + t * 0.5) * 0.2
-        return 0.3 + wave1 + wave2 + wave3
+        const base = 0.3 + wave1 + wave2 + wave3
+
+        // Moving spotlight that illuminates different areas
+        const spotX = 0.5 + fastSin(t * 0.15) * 0.4
+        const spotY = 0.5 + fastCos(t * 0.12) * 0.4
+        const spotDist = Math.sqrt((nx - spotX) ** 2 + (ny - spotY) ** 2)
+        const spotlight = Math.max(0, 1 - spotDist * 3) * 0.6
+
+        // Secondary pulsing glow from corners
+        const corner1 = Math.max(0, 1 - Math.sqrt(nx * nx + ny * ny) * 2) * (fastSin(t * 0.8) * 0.5 + 0.5) * 0.3
+        const corner2 = Math.max(0, 1 - Math.sqrt((1 - nx) ** 2 + (1 - ny) ** 2) * 2) * (fastCos(t * 0.7) * 0.5 + 0.5) * 0.3
+
+        return base + spotlight + corner1 + corner2
       },
 
       matrix: (nx, ny, t) => {
@@ -86,9 +99,22 @@ function AsciiShaderBackgroundInner({
         const offset = (col * 0.73) % 1
         const fall = ((ny + t * speed + offset) % 1)
         const brightness = fall < 0.3 ? (0.3 - fall) * 3 : 0
-        // Add some randomness per column
         const flicker = fastSin(col * 12.34 + t * 2) * 0.1
-        return brightness + flicker * 0.5
+        const base = brightness + flicker * 0.5
+
+        // Horizontal scan line that sweeps across
+        const scanY = (t * 0.1) % 1
+        const scanDist = Math.abs(ny - scanY)
+        const scanLine = Math.max(0, 1 - scanDist * 8) * 0.7
+
+        // Pulsing brightness wave from left to right
+        const pulseWave = fastSin(nx * 3 - t * 0.5) * 0.5 + 0.5
+        const pulse = pulseWave * 0.15
+
+        // Random column highlights
+        const colHighlight = fastSin(col * 7.77 + Math.floor(t * 0.3) * 13.37) > 0.85 ? 0.4 : 0
+
+        return base + scanLine + pulse + colHighlight
       },
 
       plasma: (nx, ny, t) => {
@@ -100,8 +126,27 @@ function AsciiShaderBackgroundInner({
         const v2 = fastSin(10 * (nx * fastSin(t * 0.2) + ny * fastCos(t * 0.3)) + t * 0.2)
         const v3 = fastSin(Math.sqrt(100 * (cx * cx + cy * cy) + 1) + t * 0.5)
         const v4 = fastSin(Math.sqrt(50 * cx * cx + 50 * cy * cy) - t * 0.4)
-        
-        return (v1 + v2 + v3 + v4 + 4) / 8
+        const base = (v1 + v2 + v3 + v4 + 4) / 8
+
+        // Multiple moving spotlights that illuminate different regions
+        const spot1X = 0.3 + fastSin(t * 0.13) * 0.25
+        const spot1Y = 0.3 + fastCos(t * 0.17) * 0.25
+        const spot1 = Math.max(0, 1 - Math.sqrt((nx - spot1X) ** 2 + (ny - spot1Y) ** 2) * 4) * 0.5
+
+        const spot2X = 0.7 + fastSin(t * 0.11 + 2) * 0.25
+        const spot2Y = 0.7 + fastCos(t * 0.14 + 1) * 0.25
+        const spot2 = Math.max(0, 1 - Math.sqrt((nx - spot2X) ** 2 + (ny - spot2Y) ** 2) * 4) * 0.5
+
+        const spot3X = 0.5 + fastSin(t * 0.09) * 0.4
+        const spot3Y = 0.5 + fastCos(t * 0.08) * 0.4
+        const spot3 = Math.max(0, 1 - Math.sqrt((nx - spot3X) ** 2 + (ny - spot3Y) ** 2) * 3) * 0.4
+
+        // Expanding ring pulse from center
+        const ringRadius = (t * 0.15) % 1
+        const ringDist = Math.abs(Math.sqrt(cx * cx + cy * cy) - ringRadius * 0.7)
+        const ring = Math.max(0, 1 - ringDist * 15) * 0.3
+
+        return base + spot1 + spot2 + spot3 + ring
       },
 
       tunnel: (nx, ny, t) => {
@@ -117,8 +162,17 @@ function AsciiShaderBackgroundInner({
         
         // Fade at edges and center
         const fade = Math.min(1, dist * 3) * Math.max(0, 1 - dist * 1.5)
-        
-        return (rings + spiral) * fade
+        const base = (rings + spiral) * fade
+
+        // Rotating spotlight beam
+        const beamAngle = t * 0.3
+        const angleDiff = Math.abs(((angle - beamAngle + Math.PI * 3) % (Math.PI * 2)) - Math.PI)
+        const beam = Math.max(0, 1 - angleDiff * 2) * (1 - dist) * 0.6
+
+        // Pulsing center glow
+        const centerGlow = Math.max(0, 1 - dist * 4) * (fastSin(t * 0.5) * 0.5 + 0.5) * 0.4
+
+        return base + beam + centerGlow
       },
     }
 
