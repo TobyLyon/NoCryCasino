@@ -1,0 +1,47 @@
+﻿{
+    "source":  "helius_backfill",
+    "type":  "TRANSFER",
+    "wsol_tbc_count":  2,
+    "tokenTransfers_wsol":  [
+                                {
+                                    "mint":  "So11111111111111111111111111111111111111112",
+                                    "tokenAmount":  1.97820484,
+                                    "toUserAccount":  "G6fUXjMKPJzCY1rveAE6Qm7wy5U3vZgKDJmN1VPAdiZC",
+                                    "tokenStandard":  "Fungible",
+                                    "toTokenAccount":  "FtdzvNzuuSMxjuJs51GUCpptcvJWBdsuo2k3xARaU8t6",
+                                    "fromUserAccount":  "HLnpSz9h2S4hiLQ43rnSD9XkcUThA7B8hQMKmDaiTLcC",
+                                    "fromTokenAccount":  "E83fqk9mi8W2mWcq4QijpvGdBy3NJ39GsR1Vvee4rqbU"
+                                },
+                                {
+                                    "mint":  "So11111111111111111111111111111111111111112",
+                                    "tokenAmount":  0.001638669,
+                                    "toUserAccount":  "846ah7iBSu9ApuCyEhA5xpnjHHX7d4QJKetWLbwzmJZ8",
+                                    "tokenStandard":  "Fungible",
+                                    "toTokenAccount":  "E2hchmqBQJpcnVszLwmhw6zxYxNZvJapp5dddy5YkK8o",
+                                    "fromUserAccount":  "HLnpSz9h2S4hiLQ43rnSD9XkcUThA7B8hQMKmDaiTLcC",
+                                    "fromTokenAccount":  "E83fqk9mi8W2mWcq4QijpvGdBy3NJ39GsR1Vvee4rqbU"
+                                }
+                            ],
+    "nativeBalanceChange_on_wallet":  1956917792,
+    "wallet":  "G6fUXjMKPJzCY1rveAE6Qm7wy5U3vZgKDJmN1VPAdiZC",
+    "signature":  "5YN8iLdmBaLFDyTnC9zrW7f7DL5XXGuYUa7MAgUaey3V19FK2D9nuYzr7cmB51REnbCjaTeXRsoRm82XC38emPBc",
+    "accountData_count":  21,
+    "block_time":  "2025-12-29T06:38:51+00:00",
+    "feePayer":  "G6fUXjMKPJzCY1rveAE6Qm7wy5U3vZgKDJmN1VPAdiZC",
+    "wsol_tbc_first10":  [
+                             {
+                                 "account":  "E83fqk9mi8W2mWcq4QijpvGdBy3NJ39GsR1Vvee4rqbU",
+                                 "userAccount":  "HLnpSz9h2S4hiLQ43rnSD9XkcUThA7B8hQMKmDaiTLcC",
+                                 "tokenAccount":  "E83fqk9mi8W2mWcq4QijpvGdBy3NJ39GsR1Vvee4rqbU",
+                                 "tokenAmount":  "-1979843509",
+                                 "decimals":  9
+                             },
+                             {
+                                 "account":  "E2hchmqBQJpcnVszLwmhw6zxYxNZvJapp5dddy5YkK8o",
+                                 "userAccount":  "846ah7iBSu9ApuCyEhA5xpnjHHX7d4QJKetWLbwzmJZ8",
+                                 "tokenAccount":  "E2hchmqBQJpcnVszLwmhw6zxYxNZvJapp5dddy5YkK8o",
+                                 "tokenAmount":  "1638669",
+                                 "decimals":  9
+                             }
+                         ]
+}

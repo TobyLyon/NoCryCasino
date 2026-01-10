@@ -1,0 +1,9 @@
+﻿
+wallet=G6fUXjMKPJzCY1rveAE6Qm7wy5U3vZgKDJmN1VPAdiZC ok=True eventsUpserted=146 linksUpserted=146 duration_ms=34231
+wallet=2fg5QD1eD7rzNNCsvnhmXFm5hqNgwTTG8p7kQ6f3rx6f ok=True eventsUpserted=211 linksUpserted=211 duration_ms=48457
+wallet=4BdKaxN8G6ka4GYtQQWk4G4dZRUTX2vQH9GcXdBREFUk ok=True eventsUpserted=82 linksUpserted=82 duration_ms=19098
+wallet=57rXqaQsvgyBKwebP2StfqQeCBjBS4jsrZFJN5aU2V9b ok=True eventsUpserted=82 linksUpserted=82 duration_ms=18677
+wallet=8deJ9xeUvXSJwicYptA9mHsU2rN2pDx37KWzkDkEXhU6 ok=True eventsUpserted=17 linksUpserted=17 duration_ms=4109
+wallet=39q2g5tTQn9n7KnuapzwS2smSx3NGYqBoea11tBjsGEt ok=True eventsUpserted=85 linksUpserted=85 duration_ms=20264
+wallet=DNfuF1L62WWyW3pNakVkyGGFzVVhj4Yr52jSmdTyeBHm ok=True eventsUpserted=39 linksUpserted=39 duration_ms=10345
+wallet=CyaE1VxvBrahnPWkqm5VsdCvyS2QmNht2UFrKJHga54o ok=True eventsUpserted=235 linksUpserted=235 duration_ms=53011

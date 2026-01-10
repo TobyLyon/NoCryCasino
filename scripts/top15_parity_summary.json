@@ -1,0 +1,34 @@
+﻿{
+    "missing_from_our_top15":  11,
+    "missing_wallets":  [
+                            "G6fUXjMKPJzCY1rveAE6Qm7wy5U3vZgKDJmN1VPAdiZC",
+                            "4BdKaxN8G6ka4GYtQQWk4G4dZRUTX2vQH9GcXdBREFUk",
+                            "57rXqaQsvgyBKwebP2StfqQeCBjBS4jsrZFJN5aU2V9b",
+                            "8deJ9xeUvXSJwicYptA9mHsU2rN2pDx37KWzkDkEXhU6",
+                            "39q2g5tTQn9n7KnuapzwS2smSx3NGYqBoea11tBjsGEt",
+                            "DNfuF1L62WWyW3pNakVkyGGFzVVhj4Yr52jSmdTyeBHm",
+                            "CyaE1VxvBrahnPWkqm5VsdCvyS2QmNht2UFrKJHga54o",
+                            "2kv8X2a9bxnBM8NKLc6BBTX2z13GFNRL4oRotMUJRva9",
+                            "8rvAsDKeAcEjEkiZMug9k8v1y8mW6gQQiMobd89Uy7qR",
+                            "BoYHJoKntk3pjkaV8qFojEonSPWmWMfQocZTwDd1bcGG",
+                            "DjM7Tu7whh6P3pGVBfDzwXAx2zaw51GJWrJE3PwtuN7s"
+                        ],
+    "our_top15_wallets":  [
+                              "6S8GezkxYUfZy9JPtYnanbcZTMB87Wjt1qx3c6ELajKC",
+                              "8DGbkGgQewL9mx4aXzZCUChr7hBVXvPK9fYqSqc7Ajpn",
+                              "BQVz7fQ1WsQmSTMY3umdPEPPTm1sdcBcX9sP7o6kPRmB",
+                              "FsG3BaPmRTdSrPaivbgJsFNCCa8cPfkUtk8VLWXkHpHP",
+                              "DtjYbZntc2mEm1UrZHNcKguak6h6QM4S5xobnwFgg92Y",
+                              "Bi4rd5FH5bYEN8scZ7wevxNZyNmKHdaBcvewdPFxYdLt",
+                              "GJyhzLoZAxZHZGPvF3V1wsyGUnoGSQ55n6hN6nHv7W8B",
+                              "87rRdssFiTJKY4MGARa4G5vQ31hmR7MxSmhzeaJ5AAxJ",
+                              "J9TYAsWWidbrcZybmLSfrLzryANf4CgJBLdvwdGuC8MB",
+                              "3kebnKw7cPdSkLRfiMEALyZJGZ4wdiSRvmoN4rD1yPzV",
+                              "4DdrfiDHpmx55i4SPssxVzS9ZaKLb8qr45NKY9Er9nNh",
+                              "BJeWdzF9HVeWHktxwS9u8FbCrdSDRrDoS3S9stLafdQJ",
+                              "DNsh1UfJdxmze6T6GV9QK5SoFm7HsM5TRNxVuwVgo8Zj",
+                              "2fg5QD1eD7rzNNCsvnhmXFm5hqNgwTTG8p7kQ6f3rx6f",
+                              "86AEJExyjeNNgcp7GrAvCXTDicf5aGWgoERbXFiG1EdD"
+                          ],
+    "backfill_batches":  5
+}

@@ -1,0 +1,62 @@
+﻿[
+    {
+        "chunk":  [
+                      "G6fUXjMKPJzCY1rveAE6Qm7wy5U3vZgKDJmN1VPAdiZC",
+                      "2fg5QD1eD7rzNNCsvnhmXFm5hqNgwTTG8p7kQ6f3rx6f",
+                      "4BdKaxN8G6ka4GYtQQWk4G4dZRUTX2vQH9GcXdBREFUk"
+                  ],
+        "ok":  true,
+        "processedWallets":  3,
+        "eventsUpserted":  511,
+        "linksUpserted":  511,
+        "duration_ms":  11277
+    },
+    {
+        "chunk":  [
+                      "57rXqaQsvgyBKwebP2StfqQeCBjBS4jsrZFJN5aU2V9b",
+                      "8deJ9xeUvXSJwicYptA9mHsU2rN2pDx37KWzkDkEXhU6",
+                      "39q2g5tTQn9n7KnuapzwS2smSx3NGYqBoea11tBjsGEt"
+                  ],
+        "ok":  true,
+        "processedWallets":  3,
+        "eventsUpserted":  184,
+        "linksUpserted":  184,
+        "duration_ms":  6215
+    },
+    {
+        "chunk":  [
+                      "DNfuF1L62WWyW3pNakVkyGGFzVVhj4Yr52jSmdTyeBHm",
+                      "CyaE1VxvBrahnPWkqm5VsdCvyS2QmNht2UFrKJHga54o",
+                      "Bi4rd5FH5bYEN8scZ7wevxNZyNmKHdaBcvewdPFxYdLt"
+                  ],
+        "ok":  true,
+        "processedWallets":  3,
+        "eventsUpserted":  574,
+        "linksUpserted":  574,
+        "duration_ms":  9628
+    },
+    {
+        "chunk":  [
+                      "2kv8X2a9bxnBM8NKLc6BBTX2z13GFNRL4oRotMUJRva9",
+                      "8rvAsDKeAcEjEkiZMug9k8v1y8mW6gQQiMobd89Uy7qR",
+                      "BoYHJoKntk3pjkaV8qFojEonSPWmWMfQocZTwDd1bcGG"
+                  ],
+        "ok":  true,
+        "processedWallets":  3,
+        "eventsUpserted":  245,
+        "linksUpserted":  245,
+        "duration_ms":  7919
+    },
+    {
+        "chunk":  [
+                      "6S8GezkxYUfZy9JPtYnanbcZTMB87Wjt1qx3c6ELajKC",
+                      "FsG3BaPmRTdSrPaivbgJsFNCCa8cPfkUtk8VLWXkHpHP",
+                      "DjM7Tu7whh6P3pGVBfDzwXAx2zaw51GJWrJE3PwtuN7s"
+                  ],
+        "ok":  true,
+        "processedWallets":  3,
+        "eventsUpserted":  281,
+        "linksUpserted":  281,
+        "duration_ms":  6481
+    }
+]

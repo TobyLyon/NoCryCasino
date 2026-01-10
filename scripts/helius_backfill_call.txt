@@ -1,0 +1,12 @@
+﻿{
+    "ok":  true,
+    "days":  1,
+    "cutoffEpoch":  1766902820,
+    "cutoffIso":  "2025-12-28T06:20:20.377Z",
+    "processedWallets":  1,
+    "eventsUpserted":  279,
+    "linksUpserted":  279,
+    "nextAfter":  null,
+    "exhausted":  true,
+    "duration_ms":  63810
+}

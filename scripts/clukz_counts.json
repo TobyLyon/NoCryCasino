@@ -1,0 +1,15 @@
+﻿{
+    "cutoffIso":  "2025-12-28T07:04:35.543Z",
+    "clukz_earliest_block_time":  "2025-12-28T08:02:41+00:00",
+    "tx_events_content_range":  "0-999/7847",
+    "clukz_links_content_range":  "0-288/289",
+    "leaderboard_debug":  {
+                              "maxLinks":  200000,
+                              "trackedWallets":  437,
+                              "pageSize":  5000,
+                              "linkRows":  1000,
+                              "walletsWithEvents":  103
+                          },
+    "all_links_content_range":  "0-999/8326",
+    "clukz_latest_block_time":  "2025-12-29T07:03:35+00:00"
+}

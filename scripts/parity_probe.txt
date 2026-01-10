@@ -1,0 +1,6 @@
+﻿
+cutoffIso=2025-12-28T06:26:34.301Z
+cutoff_age_hours=32
+rows=437 trackedWallets=437 walletsWithEvents=69 linkRows=1000
+git_head=5b1254560918ed9c04fb07eb2361953f3b5132b9
+git_origin_main=5b1254560918ed9c04fb07eb2361953f3b5132b9

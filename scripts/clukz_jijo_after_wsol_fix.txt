@@ -1,0 +1,5 @@
+﻿
+backfill_clukz={"ok":true,"days":1,"cutoffEpoch":1766905284,"cutoffIso":"2025-12-28T07:01:24.117Z","processedWallets":1,"eventsUpserted":283,"linksUpserted":283,"nextAfter":null,"exhausted":true,"duration_ms":4294}
+backfill_jijo={"ok":true,"days":1,"cutoffEpoch":1766905288,"cutoffIso":"2025-12-28T07:01:28.672Z","processedWallets":1,"eventsUpserted":251,"linksUpserted":251,"nextAfter":null,"exhausted":true,"duration_ms":3829}
+leaderboard wallet=G6fUXjMKPJzCY1rveAE6Qm7wy5U3vZgKDJmN1VPAdiZC name=clukz rank=24 profit_sol=1 tx_count=1 swap_volume_sol=0
+leaderboard wallet=4BdKaxN8G6ka4GYtQQWk4G4dZRUTX2vQH9GcXdBREFUk name=Jijo rank=30 profit_sol=0 tx_count=0 swap_volume_sol=0

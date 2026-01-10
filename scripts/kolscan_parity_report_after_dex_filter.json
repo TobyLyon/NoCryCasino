@@ -1,0 +1,144 @@
+﻿{
+    "generated_at_utc":  "2025-12-29T07:40:19.5259195Z",
+    "cutoffIso":  "2025-12-28T07:39:53.276Z",
+    "walletsWithEvents":  136,
+    "linkRows":  9082,
+    "pageSize":  1000,
+    "parity":  [
+                   {
+                       "wallet":  "G6fUXjMKPJzCY1rveAE6Qm7wy5U3vZgKDJmN1VPAdiZC",
+                       "name":  "clukz",
+                       "kolscan_pnl_sol":  100.19,
+                       "our_pnl_sol":  240.521474,
+                       "delta_sol":  140.331474,
+                       "our_tx_count":  148,
+                       "our_rank":  1
+                   },
+                   {
+                       "wallet":  "2fg5QD1eD7rzNNCsvnhmXFm5hqNgwTTG8p7kQ6f3rx6f",
+                       "name":  "Cupsey",
+                       "kolscan_pnl_sol":  62.91,
+                       "our_pnl_sol":  175.061149,
+                       "delta_sol":  112.151149,
+                       "our_tx_count":  848,
+                       "our_rank":  2
+                   },
+                   {
+                       "wallet":  "4BdKaxN8G6ka4GYtQQWk4G4dZRUTX2vQH9GcXdBREFUk",
+                       "name":  "Jijo",
+                       "kolscan_pnl_sol":  56.71,
+                       "our_pnl_sol":  86.040435,
+                       "delta_sol":  29.330435,
+                       "our_tx_count":  83,
+                       "our_rank":  5
+                   },
+                   {
+                       "wallet":  "57rXqaQsvgyBKwebP2StfqQeCBjBS4jsrZFJN5aU2V9b",
+                       "name":  "ram",
+                       "kolscan_pnl_sol":  49.83,
+                       "our_pnl_sol":  72.303668,
+                       "delta_sol":  22.473668,
+                       "our_tx_count":  82,
+                       "our_rank":  8
+                   },
+                   {
+                       "wallet":  "8deJ9xeUvXSJwicYptA9mHsU2rN2pDx37KWzkDkEXhU6",
+                       "name":  "Cooker",
+                       "kolscan_pnl_sol":  45.9,
+                       "our_pnl_sol":  -716.434231,
+                       "delta_sol":  -762.334231,
+                       "our_tx_count":  17,
+                       "our_rank":  437
+                   },
+                   {
+                       "wallet":  "39q2g5tTQn9n7KnuapzwS2smSx3NGYqBoea11tBjsGEt",
+                       "name":  "Walta",
+                       "kolscan_pnl_sol":  43.85,
+                       "our_pnl_sol":  90.5199,
+                       "delta_sol":  46.6699,
+                       "our_tx_count":  104,
+                       "our_rank":  4
+                   },
+                   {
+                       "wallet":  "DNfuF1L62WWyW3pNakVkyGGFzVVhj4Yr52jSmdTyeBHm",
+                       "name":  "Gake",
+                       "kolscan_pnl_sol":  38.09,
+                       "our_pnl_sol":  -61.3071,
+                       "delta_sol":  -99.3971,
+                       "our_tx_count":  40,
+                       "our_rank":  435
+                   },
+                   {
+                       "wallet":  "CyaE1VxvBrahnPWkqm5VsdCvyS2QmNht2UFrKJHga54o",
+                       "name":  "Cented",
+                       "kolscan_pnl_sol":  34.42,
+                       "our_pnl_sol":  52.712358,
+                       "delta_sol":  18.292358,
+                       "our_tx_count":  237,
+                       "our_rank":  12
+                   },
+                   {
+                       "wallet":  "Bi4rd5FH5bYEN8scZ7wevxNZyNmKHdaBcvewdPFxYdLt",
+                       "name":  "theo",
+                       "kolscan_pnl_sol":  30.09,
+                       "our_pnl_sol":  133.840172,
+                       "delta_sol":  103.750172,
+                       "our_tx_count":  602,
+                       "our_rank":  3
+                   },
+                   {
+                       "wallet":  "2kv8X2a9bxnBM8NKLc6BBTX2z13GFNRL4oRotMUJRva9",
+                       "name":  "Gh0stee",
+                       "kolscan_pnl_sol":  27.46,
+                       "our_pnl_sol":  64.307083,
+                       "delta_sol":  36.847083,
+                       "our_tx_count":  58,
+                       "our_rank":  10
+                   },
+                   {
+                       "wallet":  "8rvAsDKeAcEjEkiZMug9k8v1y8mW6gQQiMobd89Uy7qR",
+                       "name":  "Casino",
+                       "kolscan_pnl_sol":  26.67,
+                       "our_pnl_sol":  13.660516,
+                       "delta_sol":  -13.009484,
+                       "our_tx_count":  90,
+                       "our_rank":  26
+                   },
+                   {
+                       "wallet":  "BoYHJoKntk3pjkaV8qFojEonSPWmWMfQocZTwDd1bcGG",
+                       "name":  "Betman",
+                       "kolscan_pnl_sol":  26.14,
+                       "our_pnl_sol":  72.606296,
+                       "delta_sol":  46.466296,
+                       "our_tx_count":  102,
+                       "our_rank":  7
+                   },
+                   {
+                       "wallet":  "6S8GezkxYUfZy9JPtYnanbcZTMB87Wjt1qx3c6ELajKC",
+                       "name":  "Nyhrox",
+                       "kolscan_pnl_sol":  24.02,
+                       "our_pnl_sol":  85.026174,
+                       "delta_sol":  61.006174,
+                       "our_tx_count":  62,
+                       "our_rank":  6
+                   },
+                   {
+                       "wallet":  "FsG3BaPmRTdSrPaivbgJsFNCCa8cPfkUtk8VLWXkHpHP",
+                       "name":  "Reljoo",
+                       "kolscan_pnl_sol":  23.42,
+                       "our_pnl_sol":  64.45321,
+                       "delta_sol":  41.03321,
+                       "our_tx_count":  198,
+                       "our_rank":  9
+                   },
+                   {
+                       "wallet":  "DjM7Tu7whh6P3pGVBfDzwXAx2zaw51GJWrJE3PwtuN7s",
+                       "name":  "LUKEY Ã¢ÅÂ£",
+                       "kolscan_pnl_sol":  22.77,
+                       "our_pnl_sol":  46.150839,
+                       "delta_sol":  23.380839,
+                       "our_tx_count":  21,
+                       "our_rank":  13
+                   }
+               ]
+}

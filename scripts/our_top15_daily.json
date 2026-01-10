@@ -1,0 +1,107 @@
+﻿[
+    {
+        "rank":  1,
+        "wallet":  "Bi4rd5FH5bYEN8scZ7wevxNZyNmKHdaBcvewdPFxYdLt",
+        "name":  "theo",
+        "profit_sol":  26.333508883,
+        "tx_count":  102
+    },
+    {
+        "rank":  2,
+        "wallet":  "39q2g5tTQn9n7KnuapzwS2smSx3NGYqBoea11tBjsGEt",
+        "name":  "Walta",
+        "profit_sol":  23.844395636,
+        "tx_count":  14
+    },
+    {
+        "rank":  3,
+        "wallet":  "6S8GezkxYUfZy9JPtYnanbcZTMB87Wjt1qx3c6ELajKC",
+        "name":  "Nyhrox",
+        "profit_sol":  17.256512372,
+        "tx_count":  12
+    },
+    {
+        "rank":  4,
+        "wallet":  "8DGbkGgQewL9mx4aXzZCUChr7hBVXvPK9fYqSqc7Ajpn",
+        "name":  "Ban",
+        "profit_sol":  17.20728936,
+        "tx_count":  3
+    },
+    {
+        "rank":  5,
+        "wallet":  "DtjYbZntc2mEm1UrZHNcKguak6h6QM4S5xobnwFgg92Y",
+        "name":  "Files",
+        "profit_sol":  16.487345171,
+        "tx_count":  47
+    },
+    {
+        "rank":  6,
+        "wallet":  "BQVz7fQ1WsQmSTMY3umdPEPPTm1sdcBcX9sP7o6kPRmB",
+        "name":  "Limfork.eth",
+        "profit_sol":  14.267412163,
+        "tx_count":  18
+    },
+    {
+        "rank":  7,
+        "wallet":  "GJyhzLoZAxZHZGPvF3V1wsyGUnoGSQ55n6hN6nHv7W8B",
+        "name":  "LilMoonLambo",
+        "profit_sol":  6.934170077,
+        "tx_count":  7
+    },
+    {
+        "rank":  8,
+        "wallet":  "87rRdssFiTJKY4MGARa4G5vQ31hmR7MxSmhzeaJ5AAxJ",
+        "name":  "Dior",
+        "profit_sol":  6.811029302,
+        "tx_count":  5
+    },
+    {
+        "rank":  9,
+        "wallet":  "FsG3BaPmRTdSrPaivbgJsFNCCa8cPfkUtk8VLWXkHpHP",
+        "name":  "Reljoo",
+        "profit_sol":  6.287444061,
+        "tx_count":  55
+    },
+    {
+        "rank":  10,
+        "wallet":  "3kebnKw7cPdSkLRfiMEALyZJGZ4wdiSRvmoN4rD1yPzV",
+        "name":  "Bastille",
+        "profit_sol":  4.776638945,
+        "tx_count":  4
+    },
+    {
+        "rank":  11,
+        "wallet":  "2fg5QD1eD7rzNNCsvnhmXFm5hqNgwTTG8p7kQ6f3rx6f",
+        "name":  "Cupsey",
+        "profit_sol":  3.984079231,
+        "tx_count":  183
+    },
+    {
+        "rank":  12,
+        "wallet":  "BJeWdzF9HVeWHktxwS9u8FbCrdSDRrDoS3S9stLafdQJ",
+        "name":  "voyage",
+        "profit_sol":  3.378466277,
+        "tx_count":  15
+    },
+    {
+        "rank":  13,
+        "wallet":  "G6fUXjMKPJzCY1rveAE6Qm7wy5U3vZgKDJmN1VPAdiZC",
+        "name":  "clukz",
+        "profit_sol":  3.009194496,
+        "tx_count":  2
+    },
+    {
+        "rank":  14,
+        "wallet":  "DNsh1UfJdxmze6T6GV9QK5SoFm7HsM5TRNxVuwVgo8Zj",
+        "name":  "Hash",
+        "profit_sol":  2.999876012,
+        "tx_count":  3
+    },
+    {
+        "rank":  15,
+        "wallet":  "86AEJExyjeNNgcp7GrAvCXTDicf5aGWgoERbXFiG1EdD",
+        "name":  "Publix",
+        "profit_sol":  2.829824161,
+        "tx_count":  3
+    }
+]
