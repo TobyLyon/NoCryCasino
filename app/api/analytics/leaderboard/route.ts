@@ -15,9 +15,9 @@ type CacheEntry = { expiresAt: number; payload: any }
 const leaderboardCache = new Map<string, CacheEntry>()
 
 function getCacheTtlMs(timeframe: TimeFrame): number {
-  if (timeframe === "daily") return 15_000
-  if (timeframe === "weekly") return 30_000
-  return 60_000
+  if (timeframe === "daily") return 60_000
+  if (timeframe === "weekly") return 120_000
+  return 300_000
 }
 
 function cacheControlFor(timeframe: TimeFrame): string {
@@ -466,7 +466,7 @@ export async function GET(request: NextRequest) {
       const sigs = Array.from(eventsBySig.keys())
       const rawBySig = new Map<string, { raw: any; block_time: string | null }>()
 
-      const sigChunkSize = requestingOverrides ? 75 : 12
+      const sigChunkSize = requestingOverrides ? 75 : 50
 
       for (let i = 0; i < sigs.length; i += sigChunkSize) {
         const chunk = sigs.slice(i, i + sigChunkSize)

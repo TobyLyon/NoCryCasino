@@ -233,7 +233,7 @@
  .ncc-ticker-track {
    display: flex;
    width: max-content;
-   animation: ncc-marquee 30s linear infinite;
+   animation: ncc-marquee 60s linear infinite;
    will-change: transform;
  }
 
