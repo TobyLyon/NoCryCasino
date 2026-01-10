@@ -181,22 +181,26 @@ function AsciiShaderBackgroundInner({
     const resize = () => {
       if (state.destroyed) return
 
+      // Get viewport dimensions
       const w = window.innerWidth
       const h = window.innerHeight
       if (w <= 0 || h <= 0) return
 
-      // Lower resolution for performance
-      const scale = Math.max(1, Math.min(2, Math.floor(Math.max(w, h) / 800)))
-      state.cellW = 10 * scale
-      state.cellH = 14 * scale
-
-      state.cols = Math.ceil(w / state.cellW)
-      state.rows = Math.ceil(h / state.cellH)
-
+      // Set canvas to full viewport
       canvas.width = w
       canvas.height = h
-      canvas.style.width = `${w}px`
-      canvas.style.height = `${h}px`
+      canvas.style.width = w + "px"
+      canvas.style.height = h + "px"
+
+      // Measure actual character width
+      ctx.font = "12px monospace"
+      const measuredWidth = ctx.measureText("M").width
+      state.cellW = measuredWidth > 0 ? measuredWidth : 6.6
+      state.cellH = 14
+
+      // Calculate grid to fill entire canvas plus overflow
+      state.cols = Math.ceil(w / state.cellW) + 20
+      state.rows = Math.ceil(h / state.cellH) + 5
     }
 
     const render = (t: number) => {
@@ -208,8 +212,8 @@ function AsciiShaderBackgroundInner({
       // Clear canvas
       ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-      // Set font once
-      ctx.font = `${cellH - 2}px "Courier New", monospace`
+      // Set font to match cell dimensions
+      ctx.font = `${cellH - 2}px monospace`
       ctx.textBaseline = "top"
 
       // Color based on prop
@@ -222,9 +226,11 @@ function AsciiShaderBackgroundInner({
       }
       ctx.fillStyle = colors[color] || colors.emerald!
 
-      // Compute and render each character
+      // Compute and render row by row with proper spacing
+      const canvasWidth = canvas.width
       for (let y = 0; y < rows; y++) {
         const ny = y / rows
+        const yPos = y * cellH
         let line = ""
 
         for (let x = 0; x < cols; x++) {
@@ -241,8 +247,8 @@ function AsciiShaderBackgroundInner({
           line += ASCII_RAMP[charIndex] || " "
         }
 
-        // Draw entire row at once (much faster than char by char)
-        ctx.fillText(line, 0, y * cellH)
+        // Draw entire row
+        ctx.fillText(line, 0, yPos)
       }
     }
 
@@ -284,12 +290,16 @@ function AsciiShaderBackgroundInner({
   }, [mode, opacity, color])
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="fixed inset-0 z-0 pointer-events-none w-full h-full"
-      style={{ width: "100vw", height: "100vh", top: 0, left: 0 }}
-      aria-hidden="true"
-    />
+    <div 
+      className="fixed inset-0 z-0 pointer-events-none overflow-hidden"
+      style={{ width: "100vw", height: "100vh" }}
+    >
+      <canvas
+        ref={canvasRef}
+        aria-hidden="true"
+        style={{ display: "block" }}
+      />
+    </div>
   )
 }
 
