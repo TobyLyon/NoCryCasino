@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { Header } from "@/components/header"
+import { AsciiShaderBackground } from "@/components/ascii-shader-background"
 import { createBrowserClient } from "@/lib/supabase/client"
 import { Loader2 } from "lucide-react"
 
@@ -45,22 +46,27 @@ export default function MissionsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen">
-        <Header />
-        <main className="container mx-auto px-4 py-8">
+      <div className="relative min-h-screen bg-black">
+        <AsciiShaderBackground mode="plasma" opacity={0.12} color="emerald" />
+        <div className="relative z-10">
+          <Header />
+          <main className="container mx-auto px-4 py-8">
           <div className="flex items-center justify-center py-20">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
-        </main>
+          </main>
+        </div>
       </div>
     )
   }
 
   if (missions.length === 0) {
     return (
-      <div className="min-h-screen">
-        <Header />
-        <main className="container mx-auto px-4 py-8">
+      <div className="relative min-h-screen bg-black">
+        <AsciiShaderBackground mode="plasma" opacity={0.12} color="emerald" />
+        <div className="relative z-10">
+          <Header />
+          <main className="container mx-auto px-4 py-8">
           <div className="mb-8">
             <h1 className="text-4xl font-bold mb-2">Missions</h1>
             <p className="text-muted-foreground">
@@ -93,15 +99,18 @@ export default function MissionsPage() {
             <h1 className="text-4xl font-bold mb-4">Missions</h1>
             <p className="text-xl text-muted-foreground">Coming Soon!</p>
           </div>
-        </main>
+          </main>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen">
-      <Header />
-      <main className="container mx-auto px-4 py-8">
+    <div className="relative min-h-screen bg-black">
+      <AsciiShaderBackground mode="plasma" opacity={0.12} color="emerald" />
+      <div className="relative z-10">
+        <Header />
+        <main className="container mx-auto px-4 py-8">
         <div className="mb-8">
           <h1 className="text-4xl font-bold mb-2">Missions</h1>
           <p className="text-muted-foreground">Complete trading challenges to earn SOL rewards and prove your skills</p>
@@ -132,7 +141,8 @@ export default function MissionsPage() {
           <h1 className="text-4xl font-bold mb-4">Missions</h1>
           <p className="text-xl text-muted-foreground">Coming Soon!</p>
         </div>
-      </main>
+        </main>
+      </div>
     </div>
   )
 }

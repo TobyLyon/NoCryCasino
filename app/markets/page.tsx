@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { Header } from "@/components/header"
+import { AsciiShaderBackground } from "@/components/ascii-shader-background"
 import { TrendingUp, Clock, Users, Trophy, ChevronRight, Search, Zap, Target, BarChart3 } from "lucide-react"
 
 type WindowKey = "daily" | "weekly" | "monthly"
@@ -124,10 +125,13 @@ export default function MarketsPage() {
   const closedCount = markets.filter((m) => m.status === "closed" || m.status === "settled").length
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-background to-background/95">
-      <Header />
+    <div className="relative min-h-screen bg-black">
+      <AsciiShaderBackground mode="plasma" opacity={0.12} color="emerald" />
+      
+      <div className="relative z-10">
+        <Header />
 
-      <main className="mx-auto max-w-7xl px-4 py-8">
+        <main className="mx-auto max-w-7xl px-4 py-8">
         {/* Hero Section */}
         <div className="mb-10">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -367,7 +371,8 @@ export default function MarketsPage() {
             })}
           </div>
         )}
-      </main>
+        </main>
+      </div>
     </div>
   )
 }

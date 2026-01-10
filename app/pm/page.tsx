@@ -4,6 +4,7 @@ import Link from "next/link"
 import { useEffect, useState } from "react"
 import { useWallet } from "@solana/wallet-adapter-react"
 import { Header } from "@/components/header"
+import { AsciiShaderBackground } from "@/components/ascii-shader-background"
 import { TrendingUp, Clock, Users, Plus, ChevronRight, Flame, Trophy, Calendar, Search, X } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 
@@ -262,10 +263,13 @@ export default function PredictionMarketsPage() {
   })
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-background to-background/95">
-      <Header />
+    <div className="relative min-h-screen bg-black">
+      <AsciiShaderBackground mode="plasma" opacity={0.12} color="emerald" />
+      
+      <div className="relative z-10">
+        <Header />
 
-      <main className="mx-auto max-w-7xl px-4 py-8">
+        <main className="mx-auto max-w-7xl px-4 py-8">
         {/* Hero Section */}
         <div className="mb-10">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -679,6 +683,7 @@ export default function PredictionMarketsPage() {
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 }

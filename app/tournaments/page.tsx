@@ -1,6 +1,7 @@
 "use client"
 
 import { Header } from "@/components/header"
+import { AsciiShaderBackground } from "@/components/ascii-shader-background"
 import { TournamentCard } from "@/components/tournament-card"
 import { TournamentFilters } from "@/components/tournament-filters"
 import { createBrowserClient } from "@/lib/supabase/client"
@@ -94,10 +95,12 @@ export default function TournamentsPage() {
   }
 
   return (
-    <div className="min-h-screen">
-      <Header />
+    <div className="relative min-h-screen bg-black">
+      <AsciiShaderBackground mode="plasma" opacity={0.12} color="emerald" />
+      <div className="relative z-10">
+        <Header />
 
-      <main className="container mx-auto px-4 py-8">
+        <main className="container mx-auto px-4 py-8">
         <div className="mb-8">
           <h1 className="text-4xl font-bold mb-2">Tournaments</h1>
           <p className="text-muted-foreground">
@@ -164,7 +167,8 @@ export default function TournamentsPage() {
             )}
           </div>
         )}
-      </main>
+        </main>
+      </div>
     </div>
   )
 }
